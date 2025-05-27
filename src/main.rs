@@ -3,6 +3,10 @@ use safe_drive::{
 };
 use std::time::Duration;
 
+// Import ROS message types
+use sensor_msgs::msg::Joy;
+use geometry_msgs::msg::Twist;
+
 fn main() -> Result<(), DynError> {
     // Create a context.
     let ctx = Context::new()?;
