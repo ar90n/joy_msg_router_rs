@@ -6,6 +6,9 @@ use safe_drive::{
 use sensor_msgs::msg::Joy;
 use geometry_msgs::msg::Twist;
 
+// Configuration module
+mod config;
+
 fn main() -> Result<(), DynError> {
     // Create a context.
     let ctx = Context::new()?;
