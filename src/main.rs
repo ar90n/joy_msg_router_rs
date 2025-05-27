@@ -19,11 +19,16 @@ fn main() -> Result<(), DynError> {
     // Create a subscriber for Joy messages
     let subscriber = node.create_subscriber::<Joy>("joy", None)?;
 
+    // Create a publisher for Twist messages
+    let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
+
     pr_info!(logger, "Joy message router node started");
     pr_info!(logger, "Listening for Joy messages on /joy topic");
+    pr_info!(logger, "Publishing Twist messages to /cmd_vel topic");
 
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
+    
     selector.add_subscriber(
         subscriber, 
         Box::new(move |msg| {
@@ -49,6 +54,17 @@ fn main() -> Result<(), DynError> {
                 if !buttons_str.is_empty() {
                     pr_info!(logger, "Buttons pressed: {}", buttons_str.join(", "));
                 }
+            }
+            
+            // Create and publish a simple Twist message (placeholder for now)
+            let mut twist_msg = Twist::new().unwrap();
+            // TODO: Implement actual joy-to-twist conversion logic
+            twist_msg.linear.x = 0.0;
+            twist_msg.angular.z = 0.0;
+            
+            // Publish the Twist message
+            if let Err(e) = twist_publisher.send(&twist_msg) {
+                pr_info!(logger, "Failed to publish Twist message: {:?}", e);
             }
         }),
     );
