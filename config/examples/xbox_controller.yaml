@@ -1,0 +1,116 @@
+# Xbox Controller Configuration
+# Button and axis mappings for Xbox One/Series controllers
+
+# Controller mapping reference:
+# Axes:
+#   0: Left stick X (left: -1.0, right: 1.0)
+#   1: Left stick Y (up: -1.0, down: 1.0)
+#   2: LT trigger (released: 1.0, pressed: -1.0)
+#   3: Right stick X (left: -1.0, right: 1.0)
+#   4: Right stick Y (up: -1.0, down: 1.0)
+#   5: RT trigger (released: 1.0, pressed: -1.0)
+#   6: D-pad X (left: -1.0, right: 1.0)
+#   7: D-pad Y (up: -1.0, down: 1.0)
+#
+# Buttons:
+#   0: A
+#   1: B
+#   2: X
+#   3: Y
+#   4: LB (left bumper)
+#   5: RB (right bumper)
+#   6: Back/View
+#   7: Start/Menu
+#   8: Xbox button
+#   9: Left stick press
+#   10: Right stick press
+
+default_profile: "xbox_teleop"
+
+profiles:
+  xbox_teleop:
+    # LB button for safety
+    enable_button: 4
+    
+    axis_mappings:
+      # Forward/backward with left stick
+      - joy_axis: 1
+        output_field: linear_x
+        scale: -0.5       # Inverted because Xbox Y-axis is inverted
+        offset: 0.0
+        deadzone: 0.1
+      
+      # Rotation with right stick
+      - joy_axis: 3
+        output_field: angular_z
+        scale: 1.0
+        offset: 0.0
+        deadzone: 0.1
+    
+    button_mappings:
+      # A button - slow forward
+      - button: 0
+        action:
+          type: publish_twist
+          linear_x: 0.2
+          linear_y: 0.0
+          linear_z: 0.0
+          angular_x: 0.0
+          angular_y: 0.0
+          angular_z: 0.0
+      
+      # B button - stop
+      - button: 1
+        action:
+          type: publish_twist
+          linear_x: 0.0
+          linear_y: 0.0
+          linear_z: 0.0
+          angular_x: 0.0
+          angular_y: 0.0
+          angular_z: 0.0
+
+  xbox_racing:
+    # Racing-style controls with triggers
+    enable_button: -1
+    
+    axis_mappings:
+      # RT for forward acceleration
+      - joy_axis: 5
+        output_field: linear_x
+        scale: -1.0       # Scale trigger input to forward speed
+        offset: 0.5       # Offset to make trigger center = 0 speed
+        deadzone: 0.1
+      
+      # LT for reverse/brake
+      - joy_axis: 2
+        output_field: linear_x
+        scale: 0.5        # Slower reverse speed
+        offset: -0.25
+        deadzone: 0.1
+      
+      # Left stick for steering
+      - joy_axis: 0
+        output_field: angular_z
+        scale: 1.5        # More responsive steering
+        offset: 0.0
+        deadzone: 0.05
+
+  xbox_dpad:
+    # D-pad only control for precise movement
+    enable_button: -1
+    
+    axis_mappings:
+      # D-pad Y for forward/backward
+      - joy_axis: 7
+        output_field: linear_x
+        scale: -0.3       # Fixed speed, no analog control
+        offset: 0.0
+        deadzone: 0.5     # High deadzone for digital behavior
+      
+      # D-pad X for rotation
+      - joy_axis: 6
+        output_field: angular_z
+        scale: 0.5
+        offset: 0.0
+        deadzone: 0.5

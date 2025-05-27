@@ -1,0 +1,87 @@
+# PlayStation 4 Controller Configuration
+# Button and axis mappings for PS4 DualShock controller
+
+# Controller mapping reference:
+# Axes:
+#   0: Left stick X (left: -1.0, right: 1.0)
+#   1: Left stick Y (up: -1.0, down: 1.0)
+#   2: Right stick X (left: -1.0, right: 1.0)
+#   3: L2 trigger (released: 1.0, pressed: -1.0)
+#   4: Right stick Y (up: -1.0, down: 1.0)
+#   5: R2 trigger (released: 1.0, pressed: -1.0)
+#
+# Buttons:
+#   0: Square
+#   1: X (Cross)
+#   2: Circle
+#   3: Triangle
+#   4: L1
+#   5: R1
+#   6: L2 (digital)
+#   7: R2 (digital)
+#   8: Share
+#   9: Options
+#   10: L3 (left stick press)
+#   11: R3 (right stick press)
+#   12: PS button
+#   13: Touchpad press
+
+default_profile: "ps4_teleop"
+
+profiles:
+  ps4_teleop:
+    # L1 button for safety
+    enable_button: 4
+    
+    axis_mappings:
+      # Forward/backward with left stick
+      - joy_axis: 1
+        output_field: linear_x
+        scale: -0.5       # Inverted because PS4 Y-axis is inverted
+        offset: 0.0
+        deadzone: 0.1
+      
+      # Rotation with right stick
+      - joy_axis: 2
+        output_field: angular_z
+        scale: -1.0       # Adjust sign based on preference
+        offset: 0.0
+        deadzone: 0.1
+    
+    button_mappings:
+      # Square button - full stop
+      - button: 0
+        action:
+          type: publish_twist
+          linear_x: 0.0
+          linear_y: 0.0
+          linear_z: 0.0
+          angular_x: 0.0
+          angular_y: 0.0
+          angular_z: 0.0
+
+  ps4_triggers:
+    # Use triggers for forward/backward control
+    enable_button: -1
+    
+    axis_mappings:
+      # R2 for forward (scale negative values to positive forward motion)
+      - joy_axis: 5
+        output_field: linear_x
+        scale: -0.5
+        offset: 0.25      # Offset to handle trigger rest position
+        deadzone: 0.2
+      
+      # L2 for backward (scale to negative motion)
+      - joy_axis: 3
+        output_field: linear_x
+        scale: 0.5
+        offset: -0.25
+        deadzone: 0.2
+      
+      # Right stick for steering
+      - joy_axis: 2
+        output_field: angular_z
+        scale: -1.0
+        offset: 0.0
+        deadzone: 0.1
