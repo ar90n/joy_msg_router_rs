@@ -8,9 +8,11 @@ use sensor_msgs::msg::Joy;
 // Configuration modules
 mod config;
 mod config_loader;
+mod button_tracker;
 
-use config::{AxisMapping, OutputField, Profile};
+use config::{AxisMapping, OutputField, Profile, ActionType};
 use config_loader::Configuration;
+use button_tracker::ButtonTracker;
 
 /// Converts a Joy message to a Twist message based on the given profile
 fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
@@ -97,6 +99,9 @@ fn main() -> Result<(), DynError> {
     pr_info!(logger, "Axis mappings: {} configured", profile.axis_mappings.len());
     pr_info!(logger, "Button mappings: {} configured", profile.button_mappings.len());
 
+    // Create a button tracker
+    let mut button_tracker = ButtonTracker::new();
+
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
 
@@ -104,6 +109,9 @@ fn main() -> Result<(), DynError> {
         subscriber,
         Box::new(move |msg| {
             pr_debug!(logger, "Received Joy message");
+
+            // Update button tracker
+            button_tracker.update(msg.buttons.as_slice());
 
             // Check if output is enabled
             if !is_enabled(&msg, &profile) {
@@ -113,7 +121,34 @@ fn main() -> Result<(), DynError> {
 
             // Convert Joy to Twist using the profile
             match joy_to_twist(&msg, &profile) {
-                Ok(twist_msg) => {
+                Ok(mut twist_msg) => {
+                    // Process button actions
+                    for button_mapping in &profile.button_mappings {
+                        if button_tracker.is_pressed(button_mapping.button) {
+                            match &button_mapping.action {
+                                ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z } => {
+                                    // Override twist values with button action
+                                    twist_msg.linear.x = *linear_x;
+                                    twist_msg.linear.y = *linear_y;
+                                    twist_msg.linear.z = *linear_z;
+                                    twist_msg.angular.x = *angular_x;
+                                    twist_msg.angular.y = *angular_y;
+                                    twist_msg.angular.z = *angular_z;
+                                    
+                                    if button_tracker.just_pressed(button_mapping.button) {
+                                        pr_info!(logger, "Button {} pressed - publishing configured twist", button_mapping.button);
+                                    }
+                                }
+                                ActionType::CallService { service_name, service_type: _ } => {
+                                    if button_tracker.just_pressed(button_mapping.button) {
+                                        pr_info!(logger, "Button {} pressed - would call service {} (not implemented)", 
+                                                button_mapping.button, service_name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Log non-zero values
                     if twist_msg.linear.x != 0.0 || twist_msg.angular.z != 0.0 {
                         pr_debug!(
@@ -293,6 +328,9 @@ fn run_with_hardcoded_config(
     pr_info!(logger, "Publishing Twist messages to /cmd_vel topic");
     pr_info!(logger, "Using hardcoded default configuration");
 
+    // Create a button tracker
+    let mut button_tracker = ButtonTracker::new();
+
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
 
@@ -300,6 +338,9 @@ fn run_with_hardcoded_config(
         subscriber,
         Box::new(move |msg| {
             pr_debug!(logger, "Received Joy message");
+
+            // Update button tracker
+            button_tracker.update(msg.buttons.as_slice());
 
             // Check if output is enabled
             if !is_enabled(&msg, &profile) {

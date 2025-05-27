@@ -28,17 +28,17 @@ profiles:
         deadzone: 0.1
     
     # Button mappings for discrete actions
-    button_mappings: []
-      # Example button mapping (uncomment to use):
-      # - button: 0  # X button
-      #   action:
-      #     type: publish_twist
-      #     linear_x: 0.0
-      #     linear_y: 0.0
-      #     linear_z: 0.0
-      #     angular_x: 0.0
-      #     angular_y: 0.0
-      #     angular_z: 0.0
+    button_mappings:
+      # X button - emergency stop
+      - button: 0
+        action:
+          type: publish_twist
+          linear_x: 0.0
+          linear_y: 0.0
+          linear_z: 0.0
+          angular_x: 0.0
+          angular_y: 0.0
+          angular_z: 0.0
 
   # Safe teleoperation with deadman switch
   teleop_safe:
