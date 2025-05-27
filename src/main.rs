@@ -58,33 +58,47 @@ fn main() -> Result<(), DynError> {
     // Create a logger.
     let logger = Logger::new("joy_msg_router");
 
+    // TODO: Implement proper ROS2 parameter support once safe_drive API is better understood
+    // For now, use hardcoded default values that can be changed via configuration file
+
     // Create a subscriber for Joy messages
     let subscriber = node.create_subscriber::<Joy>("joy", None)?;
 
     // Create a publisher for Twist messages
     let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
 
-    // Create a default profile for testing
-    // TODO: Load from configuration file
+    // Create a profile with default values
     let mut profile = Profile::new("default".to_string());
 
-    // Add default axis mappings (common joystick configuration)
-    // Left stick Y-axis (1) -> linear.x (forward/backward)
+    // Default parameter values (will be configurable via file in next issue)
+    let linear_x_axis_val = 1_usize;  // axis 1
+    let linear_x_scale_val = 0.5;     // 0.5 m/s max
+    let angular_z_axis_val = 3_usize; // axis 3
+    let angular_z_scale_val = 1.0;    // 1.0 rad/s max
+    let deadzone_val = 0.1;           // 0.1 deadzone
+    let enable_button_val = -1_i64;   // -1 (always enabled)
+
+    // Configure enable button
+    if enable_button_val >= 0 {
+        profile.enable_button = Some(enable_button_val as usize);
+    }
+
+    // Add linear.x axis mapping
     profile.axis_mappings.push(AxisMapping {
-        joy_axis: 1,
+        joy_axis: linear_x_axis_val,
         output_field: OutputField::LinearX,
-        scale: 0.5, // Max 0.5 m/s
+        scale: linear_x_scale_val,
         offset: 0.0,
-        deadzone: 0.1,
+        deadzone: deadzone_val,
     });
 
-    // Right stick X-axis (3) -> angular.z (rotation)
+    // Add angular.z axis mapping
     profile.axis_mappings.push(AxisMapping {
-        joy_axis: 3,
+        joy_axis: angular_z_axis_val,
         output_field: OutputField::AngularZ,
-        scale: 1.0, // Max 1.0 rad/s
+        scale: angular_z_scale_val,
         offset: 0.0,
-        deadzone: 0.1,
+        deadzone: deadzone_val,
     });
 
     pr_info!(logger, "Joy message router node started");
@@ -92,7 +106,13 @@ fn main() -> Result<(), DynError> {
     pr_info!(logger, "Publishing Twist messages to /cmd_vel topic");
     pr_info!(
         logger,
-        "Using default profile with axis 1->linear.x, axis 3->angular.z"
+        "Parameters: linear_x_axis={}, linear_x_scale={:.2}, angular_z_axis={}, angular_z_scale={:.2}, deadzone={:.2}, enable_button={}",
+        linear_x_axis_val,
+        linear_x_scale_val,
+        angular_z_axis_val,
+        angular_z_scale_val,
+        deadzone_val,
+        enable_button_val
     );
 
     // Create a selector for handling callbacks
