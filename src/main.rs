@@ -1,7 +1,6 @@
 use safe_drive::{
-    context::Context, error::DynError, logger::Logger, pr_info
+    context::Context, error::DynError, logger::Logger, pr_info, pr_debug,
 };
-use std::time::Duration;
 
 // Import ROS message types
 use sensor_msgs::msg::Joy;
@@ -14,26 +13,48 @@ fn main() -> Result<(), DynError> {
     // Create a node.
     let node = ctx.create_node("joy_msg_router", None, Default::default())?;
 
-    // Create a publisher.
-    let publisher = node.create_publisher::<std_msgs::msg::String>("my_topic", None)?;
-
     // Create a logger.
     let logger = Logger::new("joy_msg_router");
 
-    let mut cnt = 0; // Counter.
-    let mut msg = std_msgs::msg::String::new().unwrap();
+    // Create a subscriber for Joy messages
+    let subscriber = node.create_subscriber::<Joy>("joy", None)?;
+
+    pr_info!(logger, "Joy message router node started");
+    pr_info!(logger, "Listening for Joy messages on /joy topic");
+
+    // Create a selector for handling callbacks
+    let mut selector = ctx.create_selector()?;
+    selector.add_subscriber(
+        subscriber, 
+        Box::new(move |msg| {
+            pr_debug!(logger, "Received Joy message");
+            
+            // Log axes values
+            if !msg.axes.is_empty() {
+                let axes_str: Vec<String> = msg.axes.iter()
+                    .enumerate()
+                    .map(|(i, &val)| format!("[{}]={:.3}", i, val))
+                    .collect();
+                pr_info!(logger, "Axes: {}", axes_str.join(", "));
+            }
+            
+            // Log button values  
+            if !msg.buttons.is_empty() {
+                let buttons_str: Vec<String> = msg.buttons.iter()
+                    .enumerate()
+                    .filter(|(_, &val)| val != 0)
+                    .map(|(i, &val)| format!("[{}]={}", i, val))
+                    .collect();
+                
+                if !buttons_str.is_empty() {
+                    pr_info!(logger, "Buttons pressed: {}", buttons_str.join(", "));
+                }
+            }
+        }),
+    );
+
+    // Spin the selector
     loop {
-        // Create a message to be sent.
-        let data = format!("Hello, World!: cnt = {cnt}");
-        msg.data.assign(&data);
-
-        pr_info!(logger, "send: {}", msg.data); // Print log.
-
-        // Send a message.
-        publisher.send(&msg)?;
-
-        // Sleep 1s.
-        cnt += 1;
-        std::thread::sleep(Duration::from_secs(1));
+        selector.wait()?;
     }
 }
