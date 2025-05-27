@@ -44,6 +44,8 @@ profiles:
   teleop_safe:
     # L1 button (4) must be held to enable movement
     enable_button: 4
+    # Alternative: multiple enable buttons (any can be pressed)
+    # enable_buttons: [4, 5]  # L1 or R1
     
     axis_mappings:
       # Same as teleop but with reduced speeds
@@ -87,7 +89,8 @@ profiles:
 
   # Drone/UAV control profile
   drone:
-    enable_button: 5  # R1 button for safety
+    # Multiple safety buttons - either L1 or R1 must be held
+    enable_buttons: [4, 5]  # L1 or R1 for safety
     
     axis_mappings:
       # Forward/backward (left stick Y)
