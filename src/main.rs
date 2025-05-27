@@ -1,13 +1,16 @@
 use safe_drive::{context::Context, error::DynError, logger::Logger, pr_debug, pr_info};
+use std::sync::Arc;
 
 // Import ROS message types
 use geometry_msgs::msg::Twist;
 use sensor_msgs::msg::Joy;
 
-// Configuration module
+// Configuration modules
 mod config;
+mod config_loader;
 
 use config::{AxisMapping, OutputField, Profile};
+use config_loader::Configuration;
 
 /// Converts a Joy message to a Twist message based on the given profile
 fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
@@ -58,8 +61,20 @@ fn main() -> Result<(), DynError> {
     // Create a logger.
     let logger = Logger::new("joy_msg_router");
 
-    // TODO: Implement proper ROS2 parameter support once safe_drive API is better understood
-    // For now, use hardcoded default values that can be changed via configuration file
+    // Load configuration file
+    // TODO: Get config file path from ROS2 parameter or command line
+    let config_path = "config/default.yaml";
+    let configuration = match Configuration::from_file(config_path) {
+        Ok(config) => {
+            pr_info!(logger, "Loaded configuration from: {}", config_path);
+            config
+        }
+        Err(e) => {
+            pr_info!(logger, "Failed to load config file: {}. Using hardcoded defaults.", e);
+            // Fall back to hardcoded configuration
+            return run_with_hardcoded_config(ctx, node, logger);
+        }
+    };
 
     // Create a subscriber for Joy messages
     let subscriber = node.create_subscriber::<Joy>("joy", None)?;
@@ -67,53 +82,20 @@ fn main() -> Result<(), DynError> {
     // Create a publisher for Twist messages
     let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
 
-    // Create a profile with default values
-    let mut profile = Profile::new("default".to_string());
-
-    // Default parameter values (will be configurable via file in next issue)
-    let linear_x_axis_val = 1_usize;  // axis 1
-    let linear_x_scale_val = 0.5;     // 0.5 m/s max
-    let angular_z_axis_val = 3_usize; // axis 3
-    let angular_z_scale_val = 1.0;    // 1.0 rad/s max
-    let deadzone_val = 0.1;           // 0.1 deadzone
-    let enable_button_val = -1_i64;   // -1 (always enabled)
-
-    // Configure enable button
-    if enable_button_val >= 0 {
-        profile.enable_button = Some(enable_button_val as usize);
-    }
-
-    // Add linear.x axis mapping
-    profile.axis_mappings.push(AxisMapping {
-        joy_axis: linear_x_axis_val,
-        output_field: OutputField::LinearX,
-        scale: linear_x_scale_val,
-        offset: 0.0,
-        deadzone: deadzone_val,
-    });
-
-    // Add angular.z axis mapping
-    profile.axis_mappings.push(AxisMapping {
-        joy_axis: angular_z_axis_val,
-        output_field: OutputField::AngularZ,
-        scale: angular_z_scale_val,
-        offset: 0.0,
-        deadzone: deadzone_val,
-    });
+    // Get the default profile from configuration
+    let profile = configuration.get_default_profile();
 
     pr_info!(logger, "Joy message router node started");
     pr_info!(logger, "Listening for Joy messages on /joy topic");
     pr_info!(logger, "Publishing Twist messages to /cmd_vel topic");
-    pr_info!(
-        logger,
-        "Parameters: linear_x_axis={}, linear_x_scale={:.2}, angular_z_axis={}, angular_z_scale={:.2}, deadzone={:.2}, enable_button={}",
-        linear_x_axis_val,
-        linear_x_scale_val,
-        angular_z_axis_val,
-        angular_z_scale_val,
-        deadzone_val,
-        enable_button_val
-    );
+    pr_info!(logger, "Using profile '{}' from configuration", profile.name);
+    
+    // Log profile details
+    if let Some(button) = profile.enable_button {
+        pr_info!(logger, "Enable button: {}", button);
+    }
+    pr_info!(logger, "Axis mappings: {} configured", profile.axis_mappings.len());
+    pr_info!(logger, "Button mappings: {} configured", profile.button_mappings.len());
 
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
@@ -257,5 +239,101 @@ mod tests {
 
         profile.enable_button = Some(5);
         assert!(!is_enabled(&joy, &profile)); // Button 5 doesn't exist
+    }
+}
+
+/// Fallback function when configuration file cannot be loaded
+fn run_with_hardcoded_config(
+    ctx: Arc<Context>,
+    node: Arc<safe_drive::node::Node>,
+    logger: Logger,
+) -> Result<(), DynError> {
+    // Create a subscriber for Joy messages
+    let subscriber = node.create_subscriber::<Joy>("joy", None)?;
+
+    // Create a publisher for Twist messages
+    let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
+
+    // Create a profile with default values
+    let mut profile = Profile::new("hardcoded_default".to_string());
+
+    // Default parameter values
+    let linear_x_axis_val = 1_usize;  // axis 1
+    let linear_x_scale_val = 0.5;     // 0.5 m/s max
+    let angular_z_axis_val = 3_usize; // axis 3
+    let angular_z_scale_val = 1.0;    // 1.0 rad/s max
+    let deadzone_val = 0.1;           // 0.1 deadzone
+    let enable_button_val = -1_i64;   // -1 (always enabled)
+
+    // Configure enable button
+    if enable_button_val >= 0 {
+        profile.enable_button = Some(enable_button_val as usize);
+    }
+
+    // Add linear.x axis mapping
+    profile.axis_mappings.push(AxisMapping {
+        joy_axis: linear_x_axis_val,
+        output_field: OutputField::LinearX,
+        scale: linear_x_scale_val,
+        offset: 0.0,
+        deadzone: deadzone_val,
+    });
+
+    // Add angular.z axis mapping
+    profile.axis_mappings.push(AxisMapping {
+        joy_axis: angular_z_axis_val,
+        output_field: OutputField::AngularZ,
+        scale: angular_z_scale_val,
+        offset: 0.0,
+        deadzone: deadzone_val,
+    });
+
+    pr_info!(logger, "Joy message router node started");
+    pr_info!(logger, "Listening for Joy messages on /joy topic");
+    pr_info!(logger, "Publishing Twist messages to /cmd_vel topic");
+    pr_info!(logger, "Using hardcoded default configuration");
+
+    // Create a selector for handling callbacks
+    let mut selector = ctx.create_selector()?;
+
+    selector.add_subscriber(
+        subscriber,
+        Box::new(move |msg| {
+            pr_debug!(logger, "Received Joy message");
+
+            // Check if output is enabled
+            if !is_enabled(&msg, &profile) {
+                pr_debug!(logger, "Output disabled (enable button not pressed)");
+                return;
+            }
+
+            // Convert Joy to Twist using the profile
+            match joy_to_twist(&msg, &profile) {
+                Ok(twist_msg) => {
+                    // Log non-zero values
+                    if twist_msg.linear.x != 0.0 || twist_msg.angular.z != 0.0 {
+                        pr_debug!(
+                            logger,
+                            "Publishing Twist: linear.x={:.3}, angular.z={:.3}",
+                            twist_msg.linear.x,
+                            twist_msg.angular.z
+                        );
+                    }
+
+                    // Publish the Twist message
+                    if let Err(e) = twist_publisher.send(&twist_msg) {
+                        pr_info!(logger, "Failed to publish Twist message: {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    pr_info!(logger, "Failed to convert Joy to Twist: {}", e);
+                }
+            }
+        }),
+    );
+
+    // Spin the selector
+    loop {
+        selector.wait()?;
     }
 }
