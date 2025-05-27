@@ -21,6 +21,10 @@ pub struct ProfileConfig {
     #[serde(default = "default_enable_button")]
     pub enable_button: i64,
     
+    /// Optional list of enable buttons (OR logic)
+    #[serde(default)]
+    pub enable_buttons: Vec<usize>,
+    
     /// Axis mappings
     #[serde(default)]
     pub axis_mappings: Vec<AxisMappingConfig>,
@@ -136,9 +140,14 @@ impl ProfileConfig {
     fn to_profile(&self, name: &str) -> Profile {
         let mut profile = Profile::new(name.to_string());
         
-        // Set enable button
+        // Set enable button(s)
         if self.enable_button >= 0 {
             profile.enable_button = Some(self.enable_button as usize);
+        }
+        
+        // Set multiple enable buttons if specified
+        if !self.enable_buttons.is_empty() {
+            profile.enable_buttons = Some(self.enable_buttons.clone());
         }
         
         // Convert axis mappings

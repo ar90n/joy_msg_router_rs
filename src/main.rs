@@ -14,6 +14,11 @@ use config::{AxisMapping, OutputField, Profile, ActionType};
 use config_loader::Configuration;
 use button_tracker::ButtonTracker;
 
+/// Tracks enable button state changes
+struct EnableStateTracker {
+    was_enabled: bool,
+}
+
 /// Converts a Joy message to a Twist message based on the given profile
 fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
     let mut twist = Twist::new().ok_or_else(|| "Failed to create Twist".to_string())?;
@@ -43,14 +48,23 @@ fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
 }
 
 /// Checks if the enable button is pressed (if configured)
-fn is_enabled(joy: &Joy, profile: &Profile) -> bool {
-    match profile.enable_button {
-        Some(button_idx) => {
-            // Check if button index is valid and pressed
-            button_idx < joy.buttons.len() && joy.buttons.as_slice()[button_idx] != 0
+fn is_enabled(_joy: &Joy, profile: &Profile, button_tracker: &ButtonTracker) -> bool {
+    // Check single enable button
+    if let Some(button_idx) = profile.enable_button {
+        if button_tracker.is_pressed(button_idx) {
+            return true;
         }
-        None => true, // Always enabled if no enable button is configured
     }
+    
+    // Check multiple enable buttons (OR logic)
+    if let Some(ref buttons) = profile.enable_buttons {
+        if button_tracker.is_any_pressed(buttons) {
+            return true;
+        }
+    }
+    
+    // If no enable buttons configured, always enabled
+    profile.enable_button.is_none() && profile.enable_buttons.is_none()
 }
 
 fn main() -> Result<(), DynError> {
@@ -101,6 +115,7 @@ fn main() -> Result<(), DynError> {
 
     // Create a button tracker
     let mut button_tracker = ButtonTracker::new();
+    let mut enable_state = EnableStateTracker { was_enabled: false };
 
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
@@ -114,7 +129,7 @@ fn main() -> Result<(), DynError> {
             button_tracker.update(msg.buttons.as_slice());
 
             // Check if output is enabled
-            if !is_enabled(&msg, &profile) {
+            if !is_enabled(&msg, &profile, &button_tracker) {
                 pr_debug!(logger, "Output disabled (enable button not pressed)");
                 return;
             }
@@ -180,6 +195,7 @@ fn main() -> Result<(), DynError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::button_tracker::ButtonTracker;
 
     fn create_test_joy(axes: Vec<f32>, buttons: Vec<i32>) -> Joy {
         let mut joy = Joy::new().unwrap();
@@ -257,23 +273,42 @@ mod tests {
     fn test_is_enabled_no_button() {
         let joy = create_test_joy(vec![], vec![0, 1, 0]);
         let profile = Profile::new("test".to_string()); // No enable button
+        let mut tracker = ButtonTracker::new();
+        tracker.update(&[0, 1, 0]);
 
-        assert!(is_enabled(&joy, &profile));
+        assert!(is_enabled(&joy, &profile, &tracker));
     }
 
     #[test]
     fn test_is_enabled_with_button() {
         let joy = create_test_joy(vec![], vec![0, 1, 0]);
         let mut profile = Profile::new("test".to_string());
+        let mut tracker = ButtonTracker::new();
+        tracker.update(&[0, 1, 0]);
 
         profile.enable_button = Some(1);
-        assert!(is_enabled(&joy, &profile)); // Button 1 is pressed
+        assert!(is_enabled(&joy, &profile, &tracker)); // Button 1 is pressed
 
         profile.enable_button = Some(0);
-        assert!(!is_enabled(&joy, &profile)); // Button 0 is not pressed
+        assert!(!is_enabled(&joy, &profile, &tracker)); // Button 0 is not pressed
 
         profile.enable_button = Some(5);
-        assert!(!is_enabled(&joy, &profile)); // Button 5 doesn't exist
+        assert!(!is_enabled(&joy, &profile, &tracker)); // Button 5 doesn't exist
+    }
+    
+    #[test]
+    fn test_is_enabled_multiple_buttons() {
+        let joy = create_test_joy(vec![], vec![0, 0, 1, 0]);
+        let mut profile = Profile::new("test".to_string());
+        let mut tracker = ButtonTracker::new();
+        tracker.update(&[0, 0, 1, 0]);
+
+        // Test multiple enable buttons (OR logic)
+        profile.enable_buttons = Some(vec![0, 1, 2]);
+        assert!(is_enabled(&joy, &profile, &tracker)); // Button 2 is pressed
+
+        profile.enable_buttons = Some(vec![0, 1]);
+        assert!(!is_enabled(&joy, &profile, &tracker)); // Neither 0 nor 1 pressed
     }
 }
 
@@ -343,7 +378,7 @@ fn run_with_hardcoded_config(
             button_tracker.update(msg.buttons.as_slice());
 
             // Check if output is enabled
-            if !is_enabled(&msg, &profile) {
+            if !is_enabled(&msg, &profile, &button_tracker) {
                 pr_debug!(logger, "Output disabled (enable button not pressed)");
                 return;
             }

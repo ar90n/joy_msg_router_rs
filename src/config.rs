@@ -9,6 +9,9 @@ pub struct Profile {
     /// Optional button index that must be pressed to enable output
     pub enable_button: Option<usize>,
     
+    /// Optional list of button indices (any must be pressed to enable)
+    pub enable_buttons: Option<Vec<usize>>,
+    
     /// Axis to output field mappings
     pub axis_mappings: Vec<AxisMapping>,
     
@@ -85,6 +88,7 @@ impl Profile {
         Self {
             name,
             enable_button: None,
+            enable_buttons: None,
             axis_mappings: Vec::new(),
             button_mappings: Vec::new(),
         }
