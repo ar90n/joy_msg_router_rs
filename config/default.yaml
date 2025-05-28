@@ -60,6 +60,21 @@ profiles:
         scale: 0.5        # Reduced rotation speed
         offset: 0.0
         deadzone: 0.1
+    
+    button_mappings:
+      # Triangle button - call service to change mode
+      - button: 2
+        action:
+          type: call_service
+          service_name: "/set_navigation_mode"
+          service_type: "std_srvs/srv/SetBool"
+      
+      # Circle button - trigger a custom action
+      - button: 1
+        action:
+          type: call_service
+          service_name: "/trigger_action"
+          service_type: "std_srvs/srv/Trigger"
 
   # Holonomic robot profile (can move sideways)
   holonomic:

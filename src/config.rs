@@ -178,4 +178,104 @@ mod tests {
         
         assert!(profile.validate().is_err());
     }
+    
+    #[test]
+    fn test_axis_mapping_apply_edge_cases() {
+        let mapping = AxisMapping {
+            joy_axis: 0,
+            output_field: OutputField::LinearX,
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.1,
+        };
+        
+        // Test exact deadzone boundary - should pass through since we use < not <=
+        assert_eq!(mapping.apply(0.1), 0.1); // Exactly at deadzone threshold (not within)
+        assert_eq!(mapping.apply(-0.1), -0.1); // Negative deadzone boundary
+        
+        // Test just inside deadzone
+        assert_eq!(mapping.apply(0.09), 0.0); // Should be zero inside deadzone
+        assert_eq!(mapping.apply(-0.09), 0.0); // Should be zero inside negative deadzone
+        
+        // Test just outside deadzone
+        assert!((mapping.apply(0.11) - 0.11).abs() < f64::EPSILON);
+        assert!((mapping.apply(-0.11) - (-0.11)).abs() < f64::EPSILON);
+    }
+    
+    #[test]
+    fn test_axis_mapping_with_offset_and_deadzone() {
+        let mapping = AxisMapping {
+            joy_axis: 0,
+            output_field: OutputField::LinearX,
+            scale: 2.0,
+            offset: 0.5,
+            deadzone: 0.2,
+        };
+        
+        // Within deadzone should return 0, not offset
+        assert_eq!(mapping.apply(0.1), 0.0);
+        assert_eq!(mapping.apply(-0.1), 0.0);
+        
+        // Outside deadzone should apply scale and offset
+        assert_eq!(mapping.apply(0.5), 1.5); // 0.5 * 2.0 + 0.5
+        assert_eq!(mapping.apply(-0.5), -0.5); // -0.5 * 2.0 + 0.5
+    }
+    
+    #[test]
+    fn test_profile_validation_negative_deadzone() {
+        let mut profile = Profile::new("test".to_string());
+        
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 0,
+            output_field: OutputField::LinearX,
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: -0.1, // Invalid negative deadzone
+        });
+        
+        assert!(profile.validate().is_err());
+    }
+    
+    #[test]
+    fn test_profile_validation_zero_scale() {
+        let mut profile = Profile::new("test".to_string());
+        
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 0,
+            output_field: OutputField::LinearX,
+            scale: 0.0, // Invalid zero scale
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        assert!(profile.validate().is_err());
+    }
+    
+    #[test]
+    fn test_profile_validation_duplicate_buttons() {
+        let mut profile = Profile::new("test".to_string());
+        
+        // Add duplicate button mappings
+        profile.button_mappings.push(ButtonMapping {
+            button: 0,
+            action: ActionType::PublishTwist {
+                linear_x: 0.0,
+                linear_y: 0.0,
+                linear_z: 0.0,
+                angular_x: 0.0,
+                angular_y: 0.0,
+                angular_z: 0.0,
+            },
+        });
+        
+        profile.button_mappings.push(ButtonMapping {
+            button: 0, // Duplicate
+            action: ActionType::CallService {
+                service_name: "test".to_string(),
+                service_type: "std_srvs/Trigger".to_string(),
+            },
+        });
+        
+        assert!(profile.validate().is_err());
+    }
 }

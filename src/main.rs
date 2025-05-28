@@ -9,14 +9,66 @@ use sensor_msgs::msg::Joy;
 mod config;
 mod config_loader;
 mod button_tracker;
+mod command_queue;
 
-use config::{AxisMapping, OutputField, Profile, ActionType};
+use config::{OutputField, Profile, ActionType};
+#[cfg(test)]
+use config::{ButtonMapping, AxisMapping};
 use config_loader::Configuration;
 use button_tracker::ButtonTracker;
+use command_queue::{CommandQueue, Command, Priority};
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
-    was_enabled: bool,
+    _was_enabled: bool,
+}
+
+/// Load configuration parameters from multiple sources
+fn load_parameters(_node: &safe_drive::node::Node, logger: &Logger) -> Result<(String, String), DynError> {
+    use std::env;
+    
+    // Default values
+    let mut config_file = String::new();
+    let mut profile = "teleop".to_string();
+    
+    // 1. Check environment variables first
+    if let Ok(env_config) = env::var("JOY_ROUTER_CONFIG_FILE") {
+        config_file = env_config;
+        pr_info!(logger, "Config file from environment: {}", config_file);
+    }
+    
+    if let Ok(env_profile) = env::var("JOY_ROUTER_PROFILE") {
+        profile = env_profile;
+        pr_info!(logger, "Profile from environment: {}", profile);
+    }
+    
+    // 2. Check command line arguments
+    let args: Vec<String> = env::args().collect();
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "--config" && i + 1 < args.len() {
+            config_file = args[i + 1].clone();
+            pr_info!(logger, "Config file from command line: {}", config_file);
+        } else if arg == "--profile" && i + 1 < args.len() {
+            profile = args[i + 1].clone();
+            pr_info!(logger, "Profile from command line: {}", profile);
+        } else if arg.starts_with("--config=") {
+            config_file = arg.strip_prefix("--config=").unwrap().to_string();
+            pr_info!(logger, "Config file from command line: {}", config_file);
+        } else if arg.starts_with("--profile=") {
+            profile = arg.strip_prefix("--profile=").unwrap().to_string();
+            pr_info!(logger, "Profile from command line: {}", profile);
+        }
+    }
+    
+    // 3. Use defaults if nothing specified
+    if config_file.is_empty() {
+        config_file = "config/default.yaml".to_string();
+        pr_info!(logger, "Using default config file: {}", config_file);
+    }
+    
+    pr_info!(logger, "Final parameters - config_file: {}, profile: {}", config_file, profile);
+    
+    Ok((config_file, profile))
 }
 
 /// Converts a Joy message to a Twist message based on the given profile
@@ -68,43 +120,23 @@ fn is_enabled(_joy: &Joy, profile: &Profile, button_tracker: &ButtonTracker) -> 
 }
 
 fn main() -> Result<(), DynError> {
-    // Create a context.
     let ctx = Context::new()?;
-
-    // Create a node.
     let node = ctx.create_node("joy_msg_router", None, Default::default())?;
-
-    // Create a logger.
     let logger = Logger::new("joy_msg_router");
 
-    // Load configuration file
-    // TODO: Get config file path from ROS2 parameter or command line
-    let config_path = "config/default.yaml";
-    let configuration = match Configuration::from_file(config_path) {
-        Ok(config) => {
-            pr_info!(logger, "Loaded configuration from: {}", config_path);
-            config
-        }
-        Err(e) => {
-            pr_info!(logger, "Failed to load config file: {}. Using hardcoded defaults.", e);
-            // Fall back to hardcoded configuration
-            return run_with_hardcoded_config(ctx, node, logger);
-        }
-    };
+    // Load configuration from parameters
+    let (config_path, profile_name) = load_parameters(&node, &logger)?;
+    let configuration = Configuration::from_file(&config_path)?;
+    let profile = configuration.get_profile(&profile_name).unwrap_or_else(|| {
+        pr_info!(logger, "Failed to load profile '{}'. Using default profile.", profile_name);
+        configuration.get_default_profile()
+    });
 
-    // Create a subscriber for Joy messages
-    let subscriber = node.create_subscriber::<Joy>("joy", None)?;
-
-    // Create a publisher for Twist messages
+    // Create subscriber and publisher
+    let joy_subscriber = node.create_subscriber::<Joy>("joy", None)?;
     let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
 
-    // Get the default profile from configuration
-    let profile = configuration.get_default_profile();
-
     pr_info!(logger, "Joy message router node started");
-    pr_info!(logger, "Listening for Joy messages on /joy topic");
-    pr_info!(logger, "Publishing Twist messages to /cmd_vel topic");
-    pr_info!(logger, "Using profile '{}' from configuration", profile.name);
     
     // Log profile details
     if let Some(button) = profile.enable_button {
@@ -115,13 +147,17 @@ fn main() -> Result<(), DynError> {
 
     // Create a button tracker
     let mut button_tracker = ButtonTracker::new();
-    let mut enable_state = EnableStateTracker { was_enabled: false };
+    let _enable_state = EnableStateTracker { _was_enabled: false };
+    
+    // Create command queue for decoupled processing
+    let command_queue = Arc::new(CommandQueue::new());
+    let queue_sender = command_queue.get_sender();
 
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
 
     selector.add_subscriber(
-        subscriber,
+        joy_subscriber,
         Box::new(move |msg| {
             pr_debug!(logger, "Received Joy message");
 
@@ -134,61 +170,127 @@ fn main() -> Result<(), DynError> {
                 return;
             }
 
-            // Convert Joy to Twist using the profile
-            match joy_to_twist(&msg, &profile) {
-                Ok(mut twist_msg) => {
-                    // Process button actions
-                    for button_mapping in &profile.button_mappings {
-                        if button_tracker.is_pressed(button_mapping.button) {
-                            match &button_mapping.action {
-                                ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z } => {
-                                    // Override twist values with button action
-                                    twist_msg.linear.x = *linear_x;
-                                    twist_msg.linear.y = *linear_y;
-                                    twist_msg.linear.z = *linear_z;
-                                    twist_msg.angular.x = *angular_x;
-                                    twist_msg.angular.y = *angular_y;
-                                    twist_msg.angular.z = *angular_z;
+            // Process button actions first (these can override axis-based movement)
+            let mut button_twist_override = None;
+            for button_mapping in &profile.button_mappings {
+                if button_mapping.button < msg.buttons.len() {
+                    let button_pressed = button_tracker.is_pressed(button_mapping.button);
+                    let just_pressed = button_tracker.just_pressed(button_mapping.button);
+                    let just_released = button_tracker.just_released(button_mapping.button);
+                    
+                    match &button_mapping.action {
+                        ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z } => {
+                            if button_pressed {
+                                // Create a Twist message with the configured values
+                                if let Some(mut action_twist) = Twist::new() {
+                                    action_twist.linear.x = *linear_x;
+                                    action_twist.linear.y = *linear_y;
+                                    action_twist.linear.z = *linear_z;
+                                    action_twist.angular.x = *angular_x;
+                                    action_twist.angular.y = *angular_y;
+                                    action_twist.angular.z = *angular_z;
                                     
-                                    if button_tracker.just_pressed(button_mapping.button) {
+                                    button_twist_override = Some(action_twist);
+                                    
+                                    if just_pressed {
                                         pr_info!(logger, "Button {} pressed - publishing configured twist", button_mapping.button);
-                                    }
-                                }
-                                ActionType::CallService { service_name, service_type: _ } => {
-                                    if button_tracker.just_pressed(button_mapping.button) {
-                                        pr_info!(logger, "Button {} pressed - would call service {} (not implemented)", 
-                                                button_mapping.button, service_name);
                                     }
                                 }
                             }
                         }
-                    }
-
-                    // Log non-zero values
-                    if twist_msg.linear.x != 0.0 || twist_msg.angular.z != 0.0 {
-                        pr_debug!(
-                            logger,
-                            "Publishing Twist: linear.x={:.3}, angular.z={:.3}",
-                            twist_msg.linear.x,
-                            twist_msg.angular.z
-                        );
-                    }
-
-                    // Publish the Twist message
-                    if let Err(e) = twist_publisher.send(&twist_msg) {
-                        pr_info!(logger, "Failed to publish Twist message: {:?}", e);
+                        ActionType::CallService { service_name, service_type } => {
+                            // Enqueue service call on button press (edge-triggered)
+                            if just_pressed {
+                                pr_info!(logger, "Button {} pressed - enqueueing service call: {}", 
+                                        button_mapping.button, service_name);
+                                
+                                if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                                    command: Command::CallService {
+                                        service_name: service_name.clone(),
+                                        service_type: service_type.clone(),
+                                    },
+                                    priority: Priority::High, // Service calls get higher priority
+                                }) {
+                                    pr_info!(logger, "Failed to enqueue service call: {:?}", e);
+                                }
+                            } else if just_released {
+                                pr_info!(logger, "Button {} released - service call complete for: {}", 
+                                        button_mapping.button, service_name);
+                            }
+                        }
                     }
                 }
-                Err(e) => {
-                    pr_info!(logger, "Failed to convert Joy to Twist: {}", e);
+            }
+
+            // Determine which Twist to publish
+            let twist_to_publish = if let Some(button_twist) = button_twist_override {
+                // Button action takes precedence
+                button_twist
+            } else {
+                // Use axis-based conversion
+                match joy_to_twist(&msg, &profile) {
+                    Ok(twist) => twist,
+                    Err(e) => {
+                        pr_info!(logger, "Failed to convert Joy to Twist: {}", e);
+                        return;
+                    }
                 }
+            };
+
+            // Log non-zero values
+            if twist_to_publish.linear.x != 0.0 || twist_to_publish.angular.z != 0.0 {
+                pr_debug!(
+                    logger,
+                    "Publishing Twist: linear.x={:.3}, angular.z={:.3}",
+                    twist_to_publish.linear.x,
+                    twist_to_publish.angular.z
+                );
+            }
+
+            // Enqueue the Twist command instead of directly publishing
+            if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                command: Command::PublishTwist(twist_to_publish),
+                priority: Priority::Normal,
+            }) {
+                pr_info!(logger, "Failed to enqueue Twist command: {:?}", e);
             }
         }),
     );
 
-    // Spin the selector
+    // Clone command queue for the processing loop
+    let queue_for_processing = Arc::clone(&command_queue);
+    
+    // Create a separate logger for the command processing loop
+    let process_logger = Logger::new("joy_msg_router_cmd_processor");
+    
+    // Spin the selector and process commands
     loop {
-        selector.wait()?;
+        // Wait for events with a timeout to allow command processing
+        selector.wait_timeout(std::time::Duration::from_millis(10))?;
+        
+        // Process pending commands
+        queue_for_processing.process_pending(|cmd| {
+            match cmd.command {
+                Command::PublishTwist(twist) => {
+                    if let Err(e) = twist_publisher.send(&twist) {
+                        pr_info!(process_logger, "Failed to publish Twist message: {:?}", e);
+                    }
+                }
+                Command::CallService { service_name, service_type } => {
+                    pr_info!(process_logger, "Would call service: {} (type: {})", service_name, service_type);
+                    // TODO: Implement actual service client when safe_drive supports it
+                }
+                Command::Stop => {
+                    // Send zero twist
+                    if let Some(zero_twist) = Twist::new() {
+                        if let Err(e) = twist_publisher.send(&zero_twist) {
+                            pr_info!(process_logger, "Failed to publish stop command: {:?}", e);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })?;
     }
 }
 
@@ -310,106 +412,238 @@ mod tests {
         profile.enable_buttons = Some(vec![0, 1]);
         assert!(!is_enabled(&joy, &profile, &tracker)); // Neither 0 nor 1 pressed
     }
-}
+    
+    #[test]
+    fn test_joy_to_twist_boundary_values() {
+        let joy = create_test_joy(vec![1.0, -1.0, 0.0], vec![]);
+        let mut profile = create_test_profile();
+        
+        // Add a third axis mapping
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 2,
+            output_field: OutputField::LinearY,
+            scale: 1.5,
+            offset: 0.0,
+            deadzone: 0.05,
+        });
+        
+        let twist = joy_to_twist(&joy, &profile).unwrap();
+        
+        assert_eq!(twist.linear.x, 2.0); // 1.0 * 2.0 (max positive)
+        assert_eq!(twist.angular.z, 1.5); // -1.0 * -1.0 + 0.5 = 1.0 + 0.5 = 1.5
+        assert_eq!(twist.linear.y, 0.0); // 0.0 * 1.5 (exact zero)
+    }
+    
+    #[test]
+    fn test_joy_to_twist_all_axes_below_deadzone() {
+        let joy = create_test_joy(vec![0.05, 0.04, 0.01], vec![]);
+        let mut profile = Profile::new("test".to_string());
+        
+        // All axes with deadzone higher than input values
+        for i in 0..3 {
+            profile.axis_mappings.push(AxisMapping {
+                joy_axis: i,
+                output_field: match i {
+                    0 => OutputField::LinearX,
+                    1 => OutputField::LinearY,
+                    _ => OutputField::LinearZ,
+                },
+                scale: 1.0,
+                offset: 0.0,
+                deadzone: 0.1,
+            });
+        }
+        
+        let twist = joy_to_twist(&joy, &profile).unwrap();
+        
+        // All values should be zero due to deadzone
+        assert_eq!(twist.linear.x, 0.0);
+        assert_eq!(twist.linear.y, 0.0);
+        assert_eq!(twist.linear.z, 0.0);
+    }
+    
+    #[test]
+    fn test_joy_to_twist_with_large_offset() {
+        let joy = create_test_joy(vec![0.0], vec![]);
+        let mut profile = Profile::new("test".to_string());
+        
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 0,
+            output_field: OutputField::AngularZ,
+            scale: 1.0,
+            offset: 2.5, // Large offset
+            deadzone: 0.01,
+        });
+        
+        let twist = joy_to_twist(&joy, &profile).unwrap();
+        
+        // Even with zero input, offset should be applied
+        assert_eq!(twist.angular.z, 0.0); // 0.0 is within deadzone, so result is 0
+    }
+    
+    #[test]
+    fn test_joy_to_twist_negative_scale() {
+        let joy = create_test_joy(vec![0.5, -0.5], vec![]);
+        let mut profile = Profile::new("test".to_string());
+        
+        // Negative scale inverts the axis
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 0,
+            output_field: OutputField::LinearX,
+            scale: -2.0,
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 1,
+            output_field: OutputField::AngularZ,
+            scale: -1.0,
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        let twist = joy_to_twist(&joy, &profile).unwrap();
+        
+        assert_eq!(twist.linear.x, -1.0); // 0.5 * -2.0
+        assert_eq!(twist.angular.z, 0.5); // -0.5 * -1.0
+    }
+    
+    #[test]
+    fn test_is_enabled_both_single_and_multiple() {
+        let joy = create_test_joy(vec![], vec![1, 0, 1, 0]);
+        let mut profile = Profile::new("test".to_string());
+        let mut tracker = ButtonTracker::new();
+        tracker.update(&[1, 0, 1, 0]);
 
-/// Fallback function when configuration file cannot be loaded
-fn run_with_hardcoded_config(
-    ctx: Arc<Context>,
-    node: Arc<safe_drive::node::Node>,
-    logger: Logger,
-) -> Result<(), DynError> {
-    // Create a subscriber for Joy messages
-    let subscriber = node.create_subscriber::<Joy>("joy", None)?;
-
-    // Create a publisher for Twist messages
-    let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
-
-    // Create a profile with default values
-    let mut profile = Profile::new("hardcoded_default".to_string());
-
-    // Default parameter values
-    let linear_x_axis_val = 1_usize;  // axis 1
-    let linear_x_scale_val = 0.5;     // 0.5 m/s max
-    let angular_z_axis_val = 3_usize; // axis 3
-    let angular_z_scale_val = 1.0;    // 1.0 rad/s max
-    let deadzone_val = 0.1;           // 0.1 deadzone
-    let enable_button_val = -1_i64;   // -1 (always enabled)
-
-    // Configure enable button
-    if enable_button_val >= 0 {
-        profile.enable_button = Some(enable_button_val as usize);
+        // Test when both single and multiple buttons are configured
+        profile.enable_button = Some(1); // Not pressed
+        profile.enable_buttons = Some(vec![2, 3]); // Button 2 is pressed
+        
+        // Should be enabled because button 2 is pressed (OR logic between single and multiple)
+        assert!(is_enabled(&joy, &profile, &tracker));
+    }
+    
+    #[test]
+    fn test_profile_with_duplicate_output_fields() {
+        let joy = create_test_joy(vec![0.5, 0.3], vec![]);
+        let mut profile = Profile::new("test".to_string());
+        
+        // Two mappings to the same output field - last one should win
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 0,
+            output_field: OutputField::LinearX,
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        profile.axis_mappings.push(AxisMapping {
+            joy_axis: 1,
+            output_field: OutputField::LinearX,
+            scale: 2.0,
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        let twist = joy_to_twist(&joy, &profile).unwrap();
+        
+        // Last mapping (axis 1) should override
+        assert!((twist.linear.x - 0.6).abs() < 0.0001); // 0.3 * 2.0 with tolerance
     }
 
-    // Add linear.x axis mapping
-    profile.axis_mappings.push(AxisMapping {
-        joy_axis: linear_x_axis_val,
-        output_field: OutputField::LinearX,
-        scale: linear_x_scale_val,
-        offset: 0.0,
-        deadzone: deadzone_val,
-    });
-
-    // Add angular.z axis mapping
-    profile.axis_mappings.push(AxisMapping {
-        joy_axis: angular_z_axis_val,
-        output_field: OutputField::AngularZ,
-        scale: angular_z_scale_val,
-        offset: 0.0,
-        deadzone: deadzone_val,
-    });
-
-    pr_info!(logger, "Joy message router node started");
-    pr_info!(logger, "Listening for Joy messages on /joy topic");
-    pr_info!(logger, "Publishing Twist messages to /cmd_vel topic");
-    pr_info!(logger, "Using hardcoded default configuration");
-
-    // Create a button tracker
-    let mut button_tracker = ButtonTracker::new();
-
-    // Create a selector for handling callbacks
-    let mut selector = ctx.create_selector()?;
-
-    selector.add_subscriber(
-        subscriber,
-        Box::new(move |msg| {
-            pr_debug!(logger, "Received Joy message");
-
-            // Update button tracker
-            button_tracker.update(msg.buttons.as_slice());
-
-            // Check if output is enabled
-            if !is_enabled(&msg, &profile, &button_tracker) {
-                pr_debug!(logger, "Output disabled (enable button not pressed)");
-                return;
+    #[test]
+    fn test_button_action_publish_twist() {
+        let mut profile = Profile::new("test".to_string());
+        
+        // Add a button mapping that publishes a fixed twist
+        profile.button_mappings.push(ButtonMapping {
+            button: 0,
+            action: ActionType::PublishTwist {
+                linear_x: 1.0,
+                linear_y: 0.0,
+                linear_z: 0.0,
+                angular_x: 0.0,
+                angular_y: 0.0,
+                angular_z: 0.5,
+            },
+        });
+        
+        // Test that the button action configuration is correct
+        assert_eq!(profile.button_mappings.len(), 1);
+        match &profile.button_mappings[0].action {
+            ActionType::PublishTwist { linear_x, angular_z, .. } => {
+                assert_eq!(*linear_x, 1.0);
+                assert_eq!(*angular_z, 0.5);
             }
+            _ => panic!("Expected PublishTwist action"),
+        }
+    }
 
-            // Convert Joy to Twist using the profile
-            match joy_to_twist(&msg, &profile) {
-                Ok(twist_msg) => {
-                    // Log non-zero values
-                    if twist_msg.linear.x != 0.0 || twist_msg.angular.z != 0.0 {
-                        pr_debug!(
-                            logger,
-                            "Publishing Twist: linear.x={:.3}, angular.z={:.3}",
-                            twist_msg.linear.x,
-                            twist_msg.angular.z
-                        );
-                    }
-
-                    // Publish the Twist message
-                    if let Err(e) = twist_publisher.send(&twist_msg) {
-                        pr_info!(logger, "Failed to publish Twist message: {:?}", e);
-                    }
-                }
-                Err(e) => {
-                    pr_info!(logger, "Failed to convert Joy to Twist: {}", e);
-                }
+    #[test]
+    fn test_button_action_call_service() {
+        let mut profile = Profile::new("test".to_string());
+        
+        // Add a button mapping that calls a service
+        profile.button_mappings.push(ButtonMapping {
+            button: 1,
+            action: ActionType::CallService {
+                service_name: "/test_service".to_string(),
+                service_type: "std_srvs/srv/Trigger".to_string(),
+            },
+        });
+        
+        // Test that the service action configuration is correct
+        assert_eq!(profile.button_mappings.len(), 1);
+        match &profile.button_mappings[0].action {
+            ActionType::CallService { service_name, service_type } => {
+                assert_eq!(service_name, "/test_service");
+                assert_eq!(service_type, "std_srvs/srv/Trigger");
             }
-        }),
-    );
+            _ => panic!("Expected CallService action"),
+        }
+    }
 
-    // Spin the selector
-    loop {
-        selector.wait()?;
+    #[test]
+    fn test_parameter_loading() {
+        use std::env;
+        
+        // Test default values
+        let logger = safe_drive::logger::Logger::new("test");
+        let context = safe_drive::context::Context::new().unwrap();
+        let node = context.create_node("test_node", None, Default::default()).unwrap();
+        
+        // Save original environment
+        let original_config = env::var("JOY_ROUTER_CONFIG_FILE").ok();
+        let original_profile = env::var("JOY_ROUTER_PROFILE").ok();
+        
+        // Clear environment variables
+        env::remove_var("JOY_ROUTER_CONFIG_FILE");
+        env::remove_var("JOY_ROUTER_PROFILE");
+        
+        // Test defaults
+        let (config_file, profile) = load_parameters(&node, &logger).unwrap();
+        assert_eq!(config_file, "config/default.yaml");
+        assert_eq!(profile, "teleop");
+        
+        // Test environment variables
+        env::set_var("JOY_ROUTER_CONFIG_FILE", "/custom/config.yaml");
+        env::set_var("JOY_ROUTER_PROFILE", "drone");
+        
+        let (config_file, profile) = load_parameters(&node, &logger).unwrap();
+        assert_eq!(config_file, "/custom/config.yaml");
+        assert_eq!(profile, "drone");
+        
+        // Restore original environment
+        if let Some(config) = original_config {
+            env::set_var("JOY_ROUTER_CONFIG_FILE", config);
+        } else {
+            env::remove_var("JOY_ROUTER_CONFIG_FILE");
+        }
+        if let Some(profile) = original_profile {
+            env::set_var("JOY_ROUTER_PROFILE", profile);
+        } else {
+            env::remove_var("JOY_ROUTER_PROFILE");
+        }
     }
 }

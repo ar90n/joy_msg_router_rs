@@ -21,3 +21,11 @@ geometry_msgs = { path = "/tmp/safe_drive_msgs/geometry_msgs" }
 msg = ["std_msgs", "sensor_msgs", "geometry_msgs"]
 msg_dir = "/tmp/safe_drive_msgs"
 safe_drive_version = "0.4"
+
+[package.metadata.ament_cargo]
+# Additional files to install
+extra_files = [
+    { src = "launch", dest = "share/joy_msg_router_rs/launch" },
+    { src = "config", dest = "share/joy_msg_router_rs/config" },
+    { src = "tests", dest = "share/joy_msg_router_rs/tests" },
+]
