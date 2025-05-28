@@ -10,6 +10,8 @@ mod config;
 mod config_loader;
 mod button_tracker;
 mod command_queue;
+mod timer;
+mod timer_callbacks;
 
 use config::{OutputField, Profile, ActionType};
 #[cfg(test)]
@@ -17,6 +19,8 @@ use config::{ButtonMapping, AxisMapping};
 use config_loader::Configuration;
 use button_tracker::ButtonTracker;
 use command_queue::{CommandQueue, Command, Priority};
+use timer::TimerManager;
+use timer_callbacks::create_timer_callback;
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
@@ -152,7 +156,14 @@ fn main() -> Result<(), DynError> {
     // Create command queue for decoupled processing
     let command_queue = Arc::new(CommandQueue::new());
     let queue_sender = command_queue.get_sender();
+    
+    // Create timer manager
+    let timer_manager = Arc::new(TimerManager::new());
 
+    // Clone necessary items for the callback
+    let timer_manager_for_cb = Arc::clone(&timer_manager);
+    let queue_sender_for_timer = queue_sender.clone();
+    
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
 
@@ -179,43 +190,106 @@ fn main() -> Result<(), DynError> {
                     let just_released = button_tracker.just_released(button_mapping.button);
                     
                     match &button_mapping.action {
-                        ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z } => {
-                            if button_pressed {
-                                // Create a Twist message with the configured values
-                                if let Some(mut action_twist) = Twist::new() {
-                                    action_twist.linear.x = *linear_x;
-                                    action_twist.linear.y = *linear_y;
-                                    action_twist.linear.z = *linear_z;
-                                    action_twist.angular.x = *angular_x;
-                                    action_twist.angular.y = *angular_y;
-                                    action_twist.angular.z = *angular_z;
-                                    
-                                    button_twist_override = Some(action_twist);
-                                    
-                                    if just_pressed {
-                                        pr_info!(logger, "Button {} pressed - publishing configured twist", button_mapping.button);
+                        ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z, once } => {
+                            if *once {
+                                // One-shot action on button press
+                                if just_pressed {
+                                    if let Some(mut action_twist) = Twist::new() {
+                                        action_twist.linear.x = *linear_x;
+                                        action_twist.linear.y = *linear_y;
+                                        action_twist.linear.z = *linear_z;
+                                        action_twist.angular.x = *angular_x;
+                                        action_twist.angular.y = *angular_y;
+                                        action_twist.angular.z = *angular_z;
+                                        
+                                        pr_info!(logger, "Button {} pressed - publishing one-shot twist", button_mapping.button);
+                                        
+                                        if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                                            command: Command::PublishTwist(action_twist),
+                                            priority: Priority::Normal,
+                                        }) {
+                                            pr_info!(logger, "Failed to enqueue one-shot Twist command: {:?}", e);
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Continuous action while button is held
+                                if button_pressed {
+                                    // Create a Twist message with the configured values
+                                    if let Some(mut action_twist) = Twist::new() {
+                                        action_twist.linear.x = *linear_x;
+                                        action_twist.linear.y = *linear_y;
+                                        action_twist.linear.z = *linear_z;
+                                        action_twist.angular.x = *angular_x;
+                                        action_twist.angular.y = *angular_y;
+                                        action_twist.angular.z = *angular_z;
+                                        
+                                        button_twist_override = Some(action_twist);
+                                        
+                                        if just_pressed {
+                                            pr_info!(logger, "Button {} pressed - publishing continuous twist", button_mapping.button);
+                                        }
                                     }
                                 }
                             }
                         }
-                        ActionType::CallService { service_name, service_type } => {
-                            // Enqueue service call on button press (edge-triggered)
-                            if just_pressed {
-                                pr_info!(logger, "Button {} pressed - enqueueing service call: {}", 
-                                        button_mapping.button, service_name);
-                                
-                                if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
-                                    command: Command::CallService {
-                                        service_name: service_name.clone(),
-                                        service_type: service_type.clone(),
-                                    },
-                                    priority: Priority::High, // Service calls get higher priority
+                        ActionType::CallService { service_name, service_type, once } => {
+                            if *once {
+                                // One-shot service call on button press
+                                if just_pressed {
+                                    pr_info!(logger, "Button {} pressed - calling service once: {}", 
+                                            button_mapping.button, service_name);
+                                    
+                                    if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                                        command: Command::CallService {
+                                            service_name: service_name.clone(),
+                                            service_type: service_type.clone(),
+                                        },
+                                        priority: Priority::High, // Service calls get higher priority
                                 }) {
                                     pr_info!(logger, "Failed to enqueue service call: {:?}", e);
                                 }
-                            } else if just_released {
-                                pr_info!(logger, "Button {} released - service call complete for: {}", 
-                                        button_mapping.button, service_name);
+                            }
+                            } else {
+                                // Continuous service calls while button is held
+                                if just_pressed {
+                                    pr_info!(logger, "Button {} pressed - starting continuous service calls: {}", 
+                                            button_mapping.button, service_name);
+                                    
+                                    // Register timer for continuous service calls
+                                    let timer_id = format!("button_{}_service", button_mapping.button);
+                                    if let Some(callback) = create_timer_callback(
+                                        &button_mapping.action,
+                                        queue_sender_for_timer.clone(),
+                                        Logger::new("joy_msg_router_timer")
+                                    ) {
+                                        timer_manager_for_cb.register_timer(
+                                            timer_id,
+                                            profile.timer_config.continuous_interval(),
+                                            callback
+                                        );
+                                    }
+                                } else if just_released {
+                                    pr_info!(logger, "Button {} released - stopping continuous service calls: {}", 
+                                            button_mapping.button, service_name);
+                                    
+                                    // Unregister timer
+                                    let timer_id = format!("button_{}_service", button_mapping.button);
+                                    timer_manager_for_cb.unregister_timer(&timer_id);
+                                }
+                            }
+                        }
+                        ActionType::NoAction => {
+                            if just_pressed {
+                                pr_info!(logger, "Button {} pressed - stop action", button_mapping.button);
+                                
+                                // Send stop command
+                                if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                                    command: Command::Stop,
+                                    priority: Priority::High,
+                                }) {
+                                    pr_info!(logger, "Failed to enqueue stop command: {:?}", e);
+                                }
                             }
                         }
                     }
@@ -263,10 +337,20 @@ fn main() -> Result<(), DynError> {
     // Create a separate logger for the command processing loop
     let process_logger = Logger::new("joy_msg_router_cmd_processor");
     
+    // Clone timer manager for the processing loop
+    let timer_for_processing = Arc::clone(&timer_manager);
+    
     // Spin the selector and process commands
     loop {
+        // Calculate timeout based on timer intervals
+        let timeout = timer_for_processing.get_min_interval()
+            .unwrap_or(std::time::Duration::from_millis(10));
+        
         // Wait for events with a timeout to allow command processing
-        selector.wait_timeout(std::time::Duration::from_millis(10))?;
+        selector.wait_timeout(timeout)?;
+        
+        // Process timers
+        timer_for_processing.process_timers();
         
         // Process pending commands
         queue_for_processing.process_pending(|cmd| {
@@ -566,13 +650,14 @@ mod tests {
                 angular_x: 0.0,
                 angular_y: 0.0,
                 angular_z: 0.5,
+                once: false,
             },
         });
         
         // Test that the button action configuration is correct
         assert_eq!(profile.button_mappings.len(), 1);
         match &profile.button_mappings[0].action {
-            ActionType::PublishTwist { linear_x, angular_z, .. } => {
+            ActionType::PublishTwist { linear_x, angular_z, once: _, .. } => {
                 assert_eq!(*linear_x, 1.0);
                 assert_eq!(*angular_z, 0.5);
             }
@@ -590,13 +675,14 @@ mod tests {
             action: ActionType::CallService {
                 service_name: "/test_service".to_string(),
                 service_type: "std_srvs/srv/Trigger".to_string(),
+                once: true,
             },
         });
         
         // Test that the service action configuration is correct
         assert_eq!(profile.button_mappings.len(), 1);
         match &profile.button_mappings[0].action {
-            ActionType::CallService { service_name, service_type } => {
+            ActionType::CallService { service_name, service_type, once: _ } => {
                 assert_eq!(service_name, "/test_service");
                 assert_eq!(service_type, "std_srvs/srv/Trigger");
             }

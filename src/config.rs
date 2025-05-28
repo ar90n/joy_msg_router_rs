@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Represents a configuration profile for joy message routing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +18,50 @@ pub struct Profile {
     
     /// Button to action mappings
     pub button_mappings: Vec<ButtonMapping>,
+    
+    /// Timer configuration for periodic actions
+    #[serde(default)]
+    pub timer_config: TimerConfig,
+}
+
+/// Timer configuration for periodic command execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimerConfig {
+    /// Interval for continuous action timers (in milliseconds)
+    #[serde(default = "TimerConfig::default_continuous_interval")]
+    pub continuous_interval_ms: u64,
+    
+    /// Interval for safety stop timer (in milliseconds)
+    #[serde(default = "TimerConfig::default_safety_interval")]
+    pub safety_stop_interval_ms: u64,
+    
+    /// Enable safety stop timer
+    #[serde(default = "TimerConfig::default_enable_safety")]
+    pub enable_safety_stop: bool,
+}
+
+impl Default for TimerConfig {
+    fn default() -> Self {
+        Self {
+            continuous_interval_ms: Self::default_continuous_interval(),
+            safety_stop_interval_ms: Self::default_safety_interval(),
+            enable_safety_stop: Self::default_enable_safety(),
+        }
+    }
+}
+
+impl TimerConfig {
+    fn default_continuous_interval() -> u64 { 50 }  // 50ms = 20Hz
+    fn default_safety_interval() -> u64 { 500 }     // 500ms
+    fn default_enable_safety() -> bool { false }
+    
+    pub fn continuous_interval(&self) -> Duration {
+        Duration::from_millis(self.continuous_interval_ms)
+    }
+    
+    pub fn safety_interval(&self) -> Duration {
+        Duration::from_millis(self.safety_stop_interval_ms)
+    }
 }
 
 /// Represents a mapping from a joy axis to an output field
@@ -64,7 +109,7 @@ pub enum OutputField {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ActionType {
-    /// Publish a Twist message with fixed values
+    /// Publish a Twist message
     PublishTwist {
         linear_x: f64,
         linear_y: f64,
@@ -72,14 +117,22 @@ pub enum ActionType {
         angular_x: f64,
         angular_y: f64,
         angular_z: f64,
+        /// Whether to publish only once (true) or continuously while pressed (false)
+        #[serde(default)]
+        once: bool,
     },
     
-    /// Call a service (future implementation)
+    /// Call a service
     CallService {
         service_name: String,
         service_type: String,
-        // Additional parameters can be added here
+        /// Whether to call only once (true) or continuously while pressed (false)
+        #[serde(default)]
+        once: bool,
     },
+    
+    /// No action (stop)
+    NoAction,
 }
 
 impl Profile {
@@ -91,6 +144,7 @@ impl Profile {
             enable_buttons: None,
             axis_mappings: Vec::new(),
             button_mappings: Vec::new(),
+            timer_config: TimerConfig::default(),
         }
     }
     
@@ -265,6 +319,7 @@ mod tests {
                 angular_x: 0.0,
                 angular_y: 0.0,
                 angular_z: 0.0,
+                once: false,
             },
         });
         
@@ -273,6 +328,7 @@ mod tests {
             action: ActionType::CallService {
                 service_name: "test".to_string(),
                 service_type: "std_srvs/Trigger".to_string(),
+                once: true,
             },
         });
         

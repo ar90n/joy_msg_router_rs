@@ -180,6 +180,7 @@ impl ProfileConfig {
                     angular_x: *angular_x,
                     angular_y: *angular_y,
                     angular_z: *angular_z,
+                    once: false, // Default to continuous
                 },
                 ActionConfig::CallService {
                     service_name,
@@ -187,6 +188,7 @@ impl ProfileConfig {
                 } => ActionType::CallService {
                     service_name: service_name.clone(),
                     service_type: service_type.clone(),
+                    once: true, // Default to single call
                 },
             };
             
