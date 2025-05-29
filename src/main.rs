@@ -15,8 +15,6 @@ mod publishers;
 mod error;
 mod logging;
 mod sequence_executor;
-mod state_machine;
-mod state_machine_manager;
 mod parameter_manager;
 mod parameter_cli;
 
@@ -26,8 +24,6 @@ mod test_multiple_message_types;
 #[cfg(test)]
 mod test_sequences_and_macros;
 
-#[cfg(test)]
-mod test_state_machines;
 
 use config::{OutputField, Profile, ActionType, SequenceStep, MacroDefinition};
 #[cfg(test)]
@@ -39,7 +35,6 @@ use publishers::Publishers;
 use error::{JoyRouterError, JoyRouterResult, ErrorContext};
 use logging::{log_command_result};
 use sequence_executor::SequenceExecutor;
-use state_machine_manager::StateMachineManager;
 use parameter_manager::ParameterManager;
 
 /// Tracks enable button state changes
@@ -204,11 +199,6 @@ fn action_to_command(action: &ActionType) -> JoyRouterResult<Command> {
                 "Macro execution not supported in this context".to_string()
             ))
         }
-        ActionType::StateMachineAction { .. } => {
-            Err(JoyRouterError::ConfigError(
-                "State machine actions not supported in this context".to_string()
-            ))
-        }
     }
 }
 
@@ -327,11 +317,6 @@ fn main_impl() -> JoyRouterResult<()> {
     // Create sequence executor for managing action sequences and macros
     let sequence_executor = Arc::new(SequenceExecutor::new(Arc::clone(&command_queue)));
     
-    // Create state machine manager for complex button interactions
-    let state_machine_manager = Arc::new(StateMachineManager::new(
-        profile.state_machines.clone(),
-        Arc::clone(&command_queue)
-    ));
     
     
     // Store the last received joy axes
@@ -375,7 +360,6 @@ fn main_impl() -> JoyRouterResult<()> {
     let profile_clone = profile.clone();
     let logger_timer = Logger::new("joy_msg_router_timer");
     let sequence_executor_timer = Arc::clone(&sequence_executor);
-    let state_machine_manager_timer = Arc::clone(&state_machine_manager);
     let parameter_manager_timer = Arc::clone(&parameter_manager);
     
     selector.add_wall_timer(
@@ -736,23 +720,10 @@ fn main_impl() -> JoyRouterResult<()> {
                                 }
                             }
                         }
-                        ActionType::StateMachineAction { state_machine, action } => {
-                            if just_pressed {
-                                if let Err(e) = state_machine_manager_timer.execute_state_machine_action(state_machine, action) {
-                                    pr_warn!(logger_timer, "Failed to execute state machine action for button {}: {:?}", button_mapping.button, e);
-                                } else {
-                                    pr_info!(logger_timer, "Button {} pressed - executed state machine action on '{}'", button_mapping.button, state_machine);
-                                }
-                            }
-                        }
                     }
                 }
             }
             
-            // Update state machines
-            if let Err(e) = state_machine_manager_timer.update(&tracker) {
-                pr_warn!(logger_timer, "Failed to update state machines: {:?}", e);
-            }
             
             
             // Determine which Twist to publish

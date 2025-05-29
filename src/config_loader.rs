@@ -37,9 +37,6 @@ pub struct ProfileConfig {
     #[serde(default)]
     pub macros: std::collections::HashMap<String, crate::config::MacroDefinition>,
     
-    /// State machine definitions available in this profile
-    #[serde(default)]
-    pub state_machines: std::collections::HashMap<String, crate::state_machine::StateMachineDefinition>,
     
 }
 
@@ -226,8 +223,6 @@ impl ProfileConfig {
         // Copy macros
         profile.macros = self.macros.clone();
         
-        // Copy state machines
-        profile.state_machines = self.state_machines.clone();
         
         
         profile

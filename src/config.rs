@@ -28,9 +28,6 @@ pub struct Profile {
     #[serde(default)]
     pub macros: std::collections::HashMap<String, MacroDefinition>,
     
-    /// State machine definitions available in this profile
-    #[serde(default)]
-    pub state_machines: std::collections::HashMap<String, crate::state_machine::StateMachineDefinition>,
     
 }
 
@@ -232,13 +229,6 @@ pub enum ActionType {
         once: bool,
     },
     
-    /// Control a state machine
-    StateMachineAction {
-        /// Name of the state machine to control
-        state_machine: String,
-        /// Action to perform on the state machine
-        action: StateMachineActionType,
-    },
     
     
     /// No action (stop)
@@ -301,21 +291,6 @@ pub struct MacroParameterDef {
     pub description: String,
 }
 
-/// Types of actions that can be performed on state machines
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StateMachineActionType {
-    /// Start or restart the state machine
-    Start,
-    /// Stop the state machine
-    Stop,
-    /// Reset to initial state
-    Reset,
-    /// Force transition to specific state
-    TransitionTo { state: String },
-    /// Trigger a specific transition condition
-    TriggerCondition { condition_id: String },
-}
 
 
 impl Profile {
@@ -329,7 +304,6 @@ impl Profile {
             button_mappings: Vec::new(),
             timer_config: TimerConfig::default(),
             macros: std::collections::HashMap::new(),
-            state_machines: std::collections::HashMap::new(),
         }
     }
     

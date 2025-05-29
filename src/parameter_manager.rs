@@ -605,7 +605,6 @@ mod tests {
             axis_mappings: vec![],
             button_mappings: vec![],
             macros: HashMap::new(),
-            state_machines: HashMap::new(),
         });
 
         Configuration {
