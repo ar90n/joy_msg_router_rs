@@ -18,6 +18,8 @@ mod sequence_executor;
 mod state_machine;
 mod state_machine_manager;
 mod gesture_detector;
+mod parameter_manager;
+mod parameter_cli;
 
 #[cfg(test)]
 mod test_multiple_message_types;
@@ -40,6 +42,7 @@ use logging::{log_command_result};
 use sequence_executor::SequenceExecutor;
 use state_machine_manager::StateMachineManager;
 use gesture_detector::GestureDetector;
+use parameter_manager::ParameterManager;
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
@@ -252,11 +255,48 @@ fn main_impl() -> JoyRouterResult<()> {
     let (config_path, profile_name) = load_parameters(&node, &logger)?;
     let configuration = Configuration::from_file(&config_path)
         .map_err(|e| JoyRouterError::ConfigError(format!("Failed to load config file '{}': {}", config_path, e)))?;
-    let profile = configuration.get_profile(&profile_name).unwrap_or_else(|| {
+    // Create parameter manager for dynamic reconfiguration
+    let parameter_manager = Arc::new(ParameterManager::new(
+        Arc::clone(&node),
+        configuration.clone(),
+        &config_path,
+        &profile_name,
+    ).context("Failed to create parameter manager")?);
+
+    let mut profile = configuration.get_profile(&profile_name).unwrap_or_else(|| {
         log_warn!(&logger, "config_loader", "load_profile", 
             &format!("Failed to load profile '{}'. Using default profile.", profile_name));
         configuration.get_default_profile()
     });
+
+    // Apply parameter overrides to the profile
+    profile = parameter_manager.apply_parameter_overrides(profile)?;
+
+    // Set up parameter change callbacks
+    parameter_manager.register_callback("active_profile", {
+        let logger_callback = Logger::new("parameter_callback");
+        move |event| {
+            pr_info!(logger_callback, "Profile change requested: {} -> {}", event.old_value, event.new_value);
+            // Note: Profile switching will be handled by parameter timer
+            Ok(())
+        }
+    })?;
+
+    parameter_manager.register_callback("emergency_stop", {
+        let logger_callback = Logger::new("parameter_callback");
+        move |event| {
+            pr_warn!(logger_callback, "Emergency stop parameter changed: {} -> {}", event.old_value, event.new_value);
+            Ok(())
+        }
+    })?;
+
+    parameter_manager.register_callback("timer_rate_hz", {
+        let logger_callback = Logger::new("parameter_callback");
+        move |event| {
+            pr_info!(logger_callback, "Timer rate change requested: {} -> {} Hz", event.old_value, event.new_value);
+            Ok(())
+        }
+    })?;
 
     // Create subscriber
     let joy_subscriber = node.create_subscriber::<Joy>("joy", None)
@@ -274,6 +314,14 @@ fn main_impl() -> JoyRouterResult<()> {
     }
     pr_info!(logger, "Axis mappings: {} configured", profile.axis_mappings.len());
     pr_info!(logger, "Button mappings: {} configured", profile.button_mappings.len());
+    
+    // Log parameter manager status
+    pr_info!(logger, "Parameter manager initialized with {} parameters", parameter_manager.get_descriptors().len());
+    if let Ok(all_params) = parameter_manager.get_all_parameters() {
+        for (name, value) in &all_params {
+            pr_info!(logger, "Parameter {}: {}", name, value);
+        }
+    }
 
     // Create a button tracker
     let button_tracker = Arc::new(Mutex::new(ButtonTracker::new()));
@@ -341,6 +389,7 @@ fn main_impl() -> JoyRouterResult<()> {
     let state_machine_manager_timer = Arc::clone(&state_machine_manager);
     let gesture_detector_timer = Arc::clone(&gesture_detector);
     let gesture_queue_sender = queue_sender.clone();
+    let parameter_manager_timer = Arc::clone(&parameter_manager);
     
     selector.add_wall_timer(
         "create_command",
@@ -370,6 +419,12 @@ fn main_impl() -> JoyRouterResult<()> {
             };
             if !is_enabled(&profile_clone, &tracker) {
                 pr_debug!(logger_timer, "Output disabled (enable button not pressed)");
+                return;
+            }
+            
+            // Check emergency stop parameter
+            if parameter_manager_timer.is_emergency_stop_active() {
+                pr_debug!(logger_timer, "Output disabled (emergency stop active)");
                 return;
             }
             

@@ -13,6 +13,8 @@ anyhow = "1.0"
 safe_drive = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
+serde_json = "1.0"
+clap = { version = "4.0", features = ["derive"] }
 std_msgs = { path = "/tmp/safe_drive_msgs/std_msgs" }
 sensor_msgs = { path = "/tmp/safe_drive_msgs/sensor_msgs" }
 geometry_msgs = { path = "/tmp/safe_drive_msgs/geometry_msgs" }
