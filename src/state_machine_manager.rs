@@ -255,11 +255,6 @@ impl StateMachineManager {
                 pr_debug!(self.logger, "State machine action: {} -> {:?}", state_machine, action);
                 Ok(Command::Stop) // Placeholder - this should be handled differently
             }
-            ActionType::GestureAction { action } => {
-                // Handle gesture actions
-                pr_debug!(self.logger, "Gesture action: {:?}", action);
-                Ok(Command::Stop) // Placeholder - this should be handled differently
-            }
         }
     }
     

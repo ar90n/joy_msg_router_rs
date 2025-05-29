@@ -17,7 +17,6 @@ mod logging;
 mod sequence_executor;
 mod state_machine;
 mod state_machine_manager;
-mod gesture_detector;
 mod parameter_manager;
 mod parameter_cli;
 
@@ -41,7 +40,6 @@ use error::{JoyRouterError, JoyRouterResult, ErrorContext};
 use logging::{log_command_result};
 use sequence_executor::SequenceExecutor;
 use state_machine_manager::StateMachineManager;
-use gesture_detector::GestureDetector;
 use parameter_manager::ParameterManager;
 
 /// Tracks enable button state changes
@@ -211,11 +209,6 @@ fn action_to_command(action: &ActionType) -> JoyRouterResult<Command> {
                 "State machine actions not supported in this context".to_string()
             ))
         }
-        ActionType::GestureAction { .. } => {
-            Err(JoyRouterError::ConfigError(
-                "Gesture actions not supported in this context".to_string()
-            ))
-        }
     }
 }
 
@@ -340,10 +333,6 @@ fn main_impl() -> JoyRouterResult<()> {
         Arc::clone(&command_queue)
     ));
     
-    // Create gesture detector for long press and gesture detection
-    let gesture_detector = Arc::new(Mutex::new(GestureDetector::new(
-        profile.gestures.clone()
-    )));
     
     // Store the last received joy axes
     let last_joy_axes = Arc::new(Mutex::new(Vec::<f32>::new()));
@@ -387,8 +376,6 @@ fn main_impl() -> JoyRouterResult<()> {
     let logger_timer = Logger::new("joy_msg_router_timer");
     let sequence_executor_timer = Arc::clone(&sequence_executor);
     let state_machine_manager_timer = Arc::clone(&state_machine_manager);
-    let gesture_detector_timer = Arc::clone(&gesture_detector);
-    let gesture_queue_sender = queue_sender.clone();
     let parameter_manager_timer = Arc::clone(&parameter_manager);
     
     selector.add_wall_timer(
@@ -758,13 +745,6 @@ fn main_impl() -> JoyRouterResult<()> {
                                 }
                             }
                         }
-                        ActionType::GestureAction { action } => {
-                            if just_pressed {
-                                pr_info!(logger_timer, "Button {} pressed - gesture action: {:?}", button_mapping.button, action);
-                                // Gesture actions would be implemented here
-                                // For now, just log the action
-                            }
-                        }
                     }
                 }
             }
@@ -774,39 +754,6 @@ fn main_impl() -> JoyRouterResult<()> {
                 pr_warn!(logger_timer, "Failed to update state machines: {:?}", e);
             }
             
-            // Update gesture detection
-            match gesture_detector_timer.lock() {
-                Ok(mut detector) => {
-                    match detector.update(&tracker) {
-                        Ok(triggered_gestures) => {
-                            for (gesture_name, action) in triggered_gestures {
-                                pr_info!(logger_timer, "Gesture '{}' triggered", gesture_name);
-                                
-                                // Convert action to command and enqueue
-                                match action_to_command(&action) {
-                                    Ok(command) => {
-                                        if let Err(e) = gesture_queue_sender.send(command_queue::PrioritizedCommand {
-                                            command,
-                                            priority: Priority::Normal,
-                                        }) {
-                                            pr_warn!(logger_timer, "Failed to enqueue gesture command: {:?}", e);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        pr_warn!(logger_timer, "Failed to convert gesture action to command: {:?}", e);
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            pr_warn!(logger_timer, "Failed to update gesture detector: {:?}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    pr_warn!(logger_timer, "Failed to lock gesture detector: {:?}", e);
-                }
-            }
             
             // Determine which Twist to publish
             let twist_to_publish = if let Some(button_twist) = button_twist_override {
