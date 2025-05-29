@@ -256,6 +256,11 @@ impl SequenceExecutor {
                     "Macro execution within sequences not yet supported".to_string()
                 ))
             }
+            ActionType::StateMachineAction { .. } => {
+                Err(JoyRouterError::ConfigError(
+                    "State machine actions within sequences not supported".to_string()
+                ))
+            }
         }
     }
     

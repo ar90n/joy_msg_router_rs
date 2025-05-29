@@ -15,12 +15,17 @@ mod publishers;
 mod error;
 mod logging;
 mod sequence_executor;
+mod state_machine;
+mod state_machine_manager;
 
 #[cfg(test)]
 mod test_multiple_message_types;
 
 #[cfg(test)]
 mod test_sequences_and_macros;
+
+#[cfg(test)]
+mod test_state_machines;
 
 use config::{OutputField, Profile, ActionType, SequenceStep, MacroDefinition};
 #[cfg(test)]
@@ -32,6 +37,7 @@ use publishers::Publishers;
 use error::{JoyRouterError, JoyRouterResult, ErrorContext};
 use logging::{log_command_result};
 use sequence_executor::SequenceExecutor;
+use state_machine_manager::StateMachineManager;
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
@@ -194,6 +200,12 @@ fn main_impl() -> JoyRouterResult<()> {
     // Create sequence executor for managing action sequences and macros
     let sequence_executor = Arc::new(SequenceExecutor::new(Arc::clone(&command_queue)));
     
+    // Create state machine manager for complex button interactions
+    let state_machine_manager = Arc::new(StateMachineManager::new(
+        profile.state_machines.clone(),
+        Arc::clone(&command_queue)
+    ));
+    
     // Store the last received joy axes
     let last_joy_axes = Arc::new(Mutex::new(Vec::<f32>::new()));
     
@@ -235,6 +247,7 @@ fn main_impl() -> JoyRouterResult<()> {
     let profile_clone = profile.clone();
     let logger_timer = Logger::new("joy_msg_router_timer");
     let sequence_executor_timer = Arc::clone(&sequence_executor);
+    let state_machine_manager_timer = Arc::clone(&state_machine_manager);
     
     selector.add_wall_timer(
         "create_command",
@@ -588,8 +601,22 @@ fn main_impl() -> JoyRouterResult<()> {
                                 }
                             }
                         }
+                        ActionType::StateMachineAction { state_machine, action } => {
+                            if just_pressed {
+                                if let Err(e) = state_machine_manager_timer.execute_state_machine_action(state_machine, action) {
+                                    pr_warn!(logger_timer, "Failed to execute state machine action for button {}: {:?}", button_mapping.button, e);
+                                } else {
+                                    pr_info!(logger_timer, "Button {} pressed - executed state machine action on '{}'", button_mapping.button, state_machine);
+                                }
+                            }
+                        }
                     }
                 }
+            }
+            
+            // Update state machines
+            if let Err(e) = state_machine_manager_timer.update(&tracker) {
+                pr_warn!(logger_timer, "Failed to update state machines: {:?}", e);
             }
             
             // Determine which Twist to publish
