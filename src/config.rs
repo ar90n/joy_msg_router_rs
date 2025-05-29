@@ -122,6 +122,56 @@ pub enum ActionType {
         once: bool,
     },
     
+    /// Publish a TwistStamped message
+    PublishTwistStamped {
+        linear_x: f64,
+        linear_y: f64,
+        linear_z: f64,
+        angular_x: f64,
+        angular_y: f64,
+        angular_z: f64,
+        frame_id: String,
+        /// Whether to publish only once (true) or continuously while pressed (false)
+        #[serde(default)]
+        once: bool,
+    },
+    
+    /// Publish a Bool message
+    PublishBool {
+        topic: String,
+        value: bool,
+        /// Whether to publish only once (true) or continuously while pressed (false)
+        #[serde(default = "default_true")]
+        once: bool,
+    },
+    
+    /// Publish an Int32 message
+    PublishInt32 {
+        topic: String,
+        value: i32,
+        /// Whether to publish only once (true) or continuously while pressed (false)
+        #[serde(default = "default_true")]
+        once: bool,
+    },
+    
+    /// Publish a Float64 message
+    PublishFloat64 {
+        topic: String,
+        value: f64,
+        /// Whether to publish only once (true) or continuously while pressed (false)
+        #[serde(default = "default_true")]
+        once: bool,
+    },
+    
+    /// Publish a String message
+    PublishString {
+        topic: String,
+        value: String,
+        /// Whether to publish only once (true) or continuously while pressed (false)
+        #[serde(default = "default_true")]
+        once: bool,
+    },
+    
     /// Call a service
     CallService {
         service_name: String,
@@ -133,6 +183,10 @@ pub enum ActionType {
     
     /// No action (stop)
     NoAction,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Profile {

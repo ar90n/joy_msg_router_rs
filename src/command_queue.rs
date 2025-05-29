@@ -1,5 +1,6 @@
 use std::sync::mpsc::{channel, Sender, Receiver};
-use geometry_msgs::msg::Twist;
+use geometry_msgs::msg::{Twist, TwistStamped};
+use std_msgs::msg::{Bool, Int32, Float64, String as StringMsg};
 use safe_drive::error::DynError;
 
 /// Represents different types of commands that can be queued
@@ -7,6 +8,16 @@ use safe_drive::error::DynError;
 pub enum Command {
     /// Publish a Twist message
     PublishTwist(Twist),
+    /// Publish a TwistStamped message
+    PublishTwistStamped(TwistStamped),
+    /// Publish a Bool message
+    PublishBool { topic: String, value: Bool },
+    /// Publish an Int32 message
+    PublishInt32 { topic: String, value: Int32 },
+    /// Publish a Float64 message
+    PublishFloat64 { topic: String, value: Float64 },
+    /// Publish a String message
+    PublishString { topic: String, value: StringMsg },
     /// Call a service (placeholder for now)
     CallService {
         service_name: String,

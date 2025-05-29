@@ -11,6 +11,10 @@ mod config_loader;
 mod button_tracker;
 mod command_queue;
 mod timer_callbacks;
+mod publishers;
+
+#[cfg(test)]
+mod test_multiple_message_types;
 
 use config::{OutputField, Profile, ActionType};
 #[cfg(test)]
@@ -18,6 +22,7 @@ use config::{ButtonMapping, AxisMapping};
 use config_loader::Configuration;
 use button_tracker::ButtonTracker;
 use command_queue::{CommandQueue, Command, Priority};
+use publishers::Publishers;
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
@@ -127,7 +132,7 @@ fn is_enabled(profile: &Profile, button_tracker: &std::sync::MutexGuard<ButtonTr
 
 fn main() -> Result<(), DynError> {
     let ctx = Context::new()?;
-    let node = ctx.create_node("joy_msg_router", None, Default::default())?;
+    let node = Arc::new(ctx.create_node("joy_msg_router", None, Default::default())?);
     let logger = Logger::new("joy_msg_router");
 
     // Load configuration from parameters
@@ -138,9 +143,11 @@ fn main() -> Result<(), DynError> {
         configuration.get_default_profile()
     });
 
-    // Create subscriber and publisher
+    // Create subscriber
     let joy_subscriber = node.create_subscriber::<Joy>("joy", None)?;
-    let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
+    
+    // Create publishers based on profile
+    let publishers = Arc::new(Publishers::from_profile(&node, &profile)?);
 
     pr_info!(logger, "Joy message router node started");
     
@@ -261,6 +268,174 @@ fn main() -> Result<(), DynError> {
                                 }
                             }
                         }
+                        ActionType::PublishTwistStamped { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z, frame_id, once } => {
+                            if *once {
+                                // One-shot action on button press
+                                if just_pressed {
+                                    if let Some(mut twist_stamped) = geometry_msgs::msg::TwistStamped::new() {
+                                        // Create frame_id RosString
+                                        if let Some(frame_id_ros) = safe_drive::msg::RosString::<0>::new(frame_id) {
+                                            twist_stamped.header.frame_id = frame_id_ros;
+                                        }
+                                        twist_stamped.twist.linear.x = *linear_x;
+                                        twist_stamped.twist.linear.y = *linear_y;
+                                        twist_stamped.twist.linear.z = *linear_z;
+                                        twist_stamped.twist.angular.x = *angular_x;
+                                        twist_stamped.twist.angular.y = *angular_y;
+                                        twist_stamped.twist.angular.z = *angular_z;
+                                        
+                                        pr_info!(logger_timer, "Button {} pressed - publishing one-shot twist stamped", button_mapping.button);
+                                        
+                                        if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                            command: Command::PublishTwistStamped(twist_stamped),
+                                            priority: Priority::Normal,
+                                        }) {
+                                            pr_info!(logger_timer, "Failed to enqueue TwistStamped command: {:?}", e);
+                                        }
+                                    }
+                                }
+                            } else if button_pressed && just_pressed {
+                                pr_info!(logger_timer, "Button {} - continuous TwistStamped not implemented yet", button_mapping.button);
+                            }
+                        }
+                        ActionType::PublishBool { topic, value, once } => {
+                            if *once {
+                                if just_pressed {
+                                    if let Some(mut bool_msg) = std_msgs::msg::Bool::new() {
+                                        bool_msg.data = *value;
+                                        
+                                        pr_info!(logger_timer, "Button {} pressed - publishing Bool {} to {}", button_mapping.button, value, topic);
+                                        
+                                        if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                            command: Command::PublishBool { topic: topic.clone(), value: bool_msg },
+                                            priority: Priority::Normal,
+                                        }) {
+                                            pr_info!(logger_timer, "Failed to enqueue Bool command: {:?}", e);
+                                        }
+                                    }
+                                }
+                            } else if button_pressed {
+                                if let Some(mut bool_msg) = std_msgs::msg::Bool::new() {
+                                    bool_msg.data = *value;
+                                    
+                                    if just_pressed {
+                                        pr_info!(logger_timer, "Button {} pressed - continuous Bool {} to {}", button_mapping.button, value, topic);
+                                    }
+                                    
+                                    if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                        command: Command::PublishBool { topic: topic.clone(), value: bool_msg },
+                                        priority: Priority::Normal,
+                                    }) {
+                                        pr_debug!(logger_timer, "Failed to enqueue Bool command: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                        ActionType::PublishInt32 { topic, value, once } => {
+                            if *once {
+                                if just_pressed {
+                                    if let Some(mut int_msg) = std_msgs::msg::Int32::new() {
+                                        int_msg.data = *value;
+                                        
+                                        pr_info!(logger_timer, "Button {} pressed - publishing Int32 {} to {}", button_mapping.button, value, topic);
+                                        
+                                        if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                            command: Command::PublishInt32 { topic: topic.clone(), value: int_msg },
+                                            priority: Priority::Normal,
+                                        }) {
+                                            pr_info!(logger_timer, "Failed to enqueue Int32 command: {:?}", e);
+                                        }
+                                    }
+                                }
+                            } else if button_pressed {
+                                if let Some(mut int_msg) = std_msgs::msg::Int32::new() {
+                                    int_msg.data = *value;
+                                    
+                                    if just_pressed {
+                                        pr_info!(logger_timer, "Button {} pressed - continuous Int32 {} to {}", button_mapping.button, value, topic);
+                                    }
+                                    
+                                    if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                        command: Command::PublishInt32 { topic: topic.clone(), value: int_msg },
+                                        priority: Priority::Normal,
+                                    }) {
+                                        pr_debug!(logger_timer, "Failed to enqueue Int32 command: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                        ActionType::PublishFloat64 { topic, value, once } => {
+                            if *once {
+                                if just_pressed {
+                                    if let Some(mut float_msg) = std_msgs::msg::Float64::new() {
+                                        float_msg.data = *value;
+                                        
+                                        pr_info!(logger_timer, "Button {} pressed - publishing Float64 {} to {}", button_mapping.button, value, topic);
+                                        
+                                        if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                            command: Command::PublishFloat64 { topic: topic.clone(), value: float_msg },
+                                            priority: Priority::Normal,
+                                        }) {
+                                            pr_info!(logger_timer, "Failed to enqueue Float64 command: {:?}", e);
+                                        }
+                                    }
+                                }
+                            } else if button_pressed {
+                                if let Some(mut float_msg) = std_msgs::msg::Float64::new() {
+                                    float_msg.data = *value;
+                                    
+                                    if just_pressed {
+                                        pr_info!(logger_timer, "Button {} pressed - continuous Float64 {} to {}", button_mapping.button, value, topic);
+                                    }
+                                    
+                                    if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                        command: Command::PublishFloat64 { topic: topic.clone(), value: float_msg },
+                                        priority: Priority::Normal,
+                                    }) {
+                                        pr_debug!(logger_timer, "Failed to enqueue Float64 command: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                        ActionType::PublishString { topic, value, once } => {
+                            if *once {
+                                if just_pressed {
+                                    if let Some(mut str_msg) = std_msgs::msg::String::new() {
+                                        // Create data RosString
+                                        if let Some(data_ros) = safe_drive::msg::RosString::<0>::new(value) {
+                                            str_msg.data = data_ros;
+                                        }
+                                        
+                                        pr_info!(logger_timer, "Button {} pressed - publishing String '{}' to {}", button_mapping.button, value, topic);
+                                        
+                                        if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                            command: Command::PublishString { topic: topic.clone(), value: str_msg },
+                                            priority: Priority::Normal,
+                                        }) {
+                                            pr_info!(logger_timer, "Failed to enqueue String command: {:?}", e);
+                                        }
+                                    }
+                                }
+                            } else if button_pressed {
+                                if let Some(mut str_msg) = std_msgs::msg::String::new() {
+                                    // Create data RosString
+                                    if let Some(data_ros) = safe_drive::msg::RosString::<0>::new(value) {
+                                        str_msg.data = data_ros;
+                                    }
+                                    
+                                    if just_pressed {
+                                        pr_info!(logger_timer, "Button {} pressed - continuous String '{}' to {}", button_mapping.button, value, topic);
+                                    }
+                                    
+                                    if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                        command: Command::PublishString { topic: topic.clone(), value: str_msg },
+                                        priority: Priority::Normal,
+                                    }) {
+                                        pr_debug!(logger_timer, "Failed to enqueue String command: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
                         ActionType::CallService { service_name, service_type, once } => {
                             if *once {
                                 // One-shot service call on button press
@@ -362,6 +537,7 @@ fn main() -> Result<(), DynError> {
     
     // Create a separate logger for the command processing loop
     let process_logger = Logger::new("joy_msg_router_cmd_processor");
+    let publishers_for_processing = Arc::clone(&publishers);
     
     // Spin the selector and process commands
     loop {
@@ -372,8 +548,53 @@ fn main() -> Result<(), DynError> {
         command_queue.process_pending(|cmd| {
             match cmd.command {
                 Command::PublishTwist(twist) => {
-                    if let Err(e) = twist_publisher.send(&twist) {
+                    if let Err(e) = publishers_for_processing.twist_publisher.send(&twist) {
                         pr_info!(process_logger, "Failed to publish Twist message: {:?}", e);
+                    }
+                }
+                Command::PublishTwistStamped(twist_stamped) => {
+                    if let Some(ref publisher) = publishers_for_processing.twist_stamped_publisher {
+                        if let Err(e) = publisher.send(&twist_stamped) {
+                            pr_info!(process_logger, "Failed to publish TwistStamped message: {:?}", e);
+                        }
+                    } else {
+                        pr_info!(process_logger, "TwistStamped publisher not configured");
+                    }
+                }
+                Command::PublishBool { topic, value } => {
+                    if let Some(publisher) = publishers_for_processing.bool_publishers.get(&topic) {
+                        if let Err(e) = publisher.send(&value) {
+                            pr_info!(process_logger, "Failed to publish Bool message to {}: {:?}", topic, e);
+                        }
+                    } else {
+                        pr_info!(process_logger, "Bool publisher for topic '{}' not configured", topic);
+                    }
+                }
+                Command::PublishInt32 { topic, value } => {
+                    if let Some(publisher) = publishers_for_processing.int32_publishers.get(&topic) {
+                        if let Err(e) = publisher.send(&value) {
+                            pr_info!(process_logger, "Failed to publish Int32 message to {}: {:?}", topic, e);
+                        }
+                    } else {
+                        pr_info!(process_logger, "Int32 publisher for topic '{}' not configured", topic);
+                    }
+                }
+                Command::PublishFloat64 { topic, value } => {
+                    if let Some(publisher) = publishers_for_processing.float64_publishers.get(&topic) {
+                        if let Err(e) = publisher.send(&value) {
+                            pr_info!(process_logger, "Failed to publish Float64 message to {}: {:?}", topic, e);
+                        }
+                    } else {
+                        pr_info!(process_logger, "Float64 publisher for topic '{}' not configured", topic);
+                    }
+                }
+                Command::PublishString { topic, value } => {
+                    if let Some(publisher) = publishers_for_processing.string_publishers.get(&topic) {
+                        if let Err(e) = publisher.send(&value) {
+                            pr_info!(process_logger, "Failed to publish String message to {}: {:?}", topic, e);
+                        }
+                    } else {
+                        pr_info!(process_logger, "String publisher for topic '{}' not configured", topic);
                     }
                 }
                 Command::CallService { service_name, service_type } => {
@@ -381,9 +602,9 @@ fn main() -> Result<(), DynError> {
                     // TODO: Implement actual service client when safe_drive supports it
                 }
                 Command::Stop => {
-                    // Send zero twist
+                    // Send zero twist to cmd_vel
                     if let Some(zero_twist) = Twist::new() {
-                        if let Err(e) = twist_publisher.send(&zero_twist) {
+                        if let Err(e) = publishers_for_processing.twist_publisher.send(&zero_twist) {
                             pr_info!(process_logger, "Failed to publish stop command: {:?}", e);
                         }
                     }
