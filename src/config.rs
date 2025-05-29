@@ -31,6 +31,10 @@ pub struct Profile {
     /// State machine definitions available in this profile
     #[serde(default)]
     pub state_machines: std::collections::HashMap<String, crate::state_machine::StateMachineDefinition>,
+    
+    /// Gesture definitions for long press and complex gestures
+    #[serde(default)]
+    pub gestures: std::collections::HashMap<String, crate::gesture_detector::GestureDefinition>,
 }
 
 /// Timer configuration for periodic command execution
@@ -239,6 +243,12 @@ pub enum ActionType {
         action: StateMachineActionType,
     },
     
+    /// Control gesture detection
+    GestureAction {
+        /// Type of gesture action
+        action: GestureActionType,
+    },
+    
     /// No action (stop)
     NoAction,
 }
@@ -315,6 +325,22 @@ pub enum StateMachineActionType {
     TriggerCondition { condition_id: String },
 }
 
+/// Types of actions that can be performed on gesture detection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GestureActionType {
+    /// Enable gesture detection
+    Enable,
+    /// Disable gesture detection
+    Disable,
+    /// Reset gesture detection state
+    Reset,
+    /// Enable specific gesture
+    EnableGesture { name: String },
+    /// Disable specific gesture
+    DisableGesture { name: String },
+}
+
 impl Profile {
     /// Creates a new empty profile
     pub fn new(name: String) -> Self {
@@ -327,6 +353,7 @@ impl Profile {
             timer_config: TimerConfig::default(),
             macros: std::collections::HashMap::new(),
             state_machines: std::collections::HashMap::new(),
+            gestures: std::collections::HashMap::new(),
         }
     }
     

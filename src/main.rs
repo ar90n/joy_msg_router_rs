@@ -17,6 +17,7 @@ mod logging;
 mod sequence_executor;
 mod state_machine;
 mod state_machine_manager;
+mod gesture_detector;
 
 #[cfg(test)]
 mod test_multiple_message_types;
@@ -38,6 +39,7 @@ use error::{JoyRouterError, JoyRouterResult, ErrorContext};
 use logging::{log_command_result};
 use sequence_executor::SequenceExecutor;
 use state_machine_manager::StateMachineManager;
+use gesture_detector::GestureDetector;
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
@@ -130,6 +132,90 @@ fn joy_to_twist(joy: &Joy, profile: &Profile) -> JoyRouterResult<Twist> {
     axes_to_twist(joy.axes.as_slice(), profile)
 }
 
+/// Convert ActionType to Command
+fn action_to_command(action: &ActionType) -> JoyRouterResult<Command> {
+    match action {
+        ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z, .. } => {
+            let mut twist = Twist::new()
+                .ok_or_else(|| JoyRouterError::MessageError("Failed to create Twist".to_string()))?;
+            twist.linear.x = *linear_x;
+            twist.linear.y = *linear_y;
+            twist.linear.z = *linear_z;
+            twist.angular.x = *angular_x;
+            twist.angular.y = *angular_y;
+            twist.angular.z = *angular_z;
+            Ok(Command::PublishTwist(twist))
+        }
+        ActionType::PublishTwistStamped { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z, frame_id, .. } => {
+            let mut twist_stamped = geometry_msgs::msg::TwistStamped::new()
+                .ok_or_else(|| JoyRouterError::MessageError("Failed to create TwistStamped".to_string()))?;
+            
+            if let Some(frame_id_ros) = safe_drive::msg::RosString::<0>::new(frame_id) {
+                twist_stamped.header.frame_id = frame_id_ros;
+            }
+            twist_stamped.twist.linear.x = *linear_x;
+            twist_stamped.twist.linear.y = *linear_y;
+            twist_stamped.twist.linear.z = *linear_z;
+            twist_stamped.twist.angular.x = *angular_x;
+            twist_stamped.twist.angular.y = *angular_y;
+            twist_stamped.twist.angular.z = *angular_z;
+            Ok(Command::PublishTwistStamped(twist_stamped))
+        }
+        ActionType::PublishBool { topic, value, .. } => {
+            let mut bool_msg = std_msgs::msg::Bool::new()
+                .ok_or_else(|| JoyRouterError::MessageError("Failed to create Bool".to_string()))?;
+            bool_msg.data = *value;
+            Ok(Command::PublishBool { topic: topic.clone(), value: bool_msg })
+        }
+        ActionType::PublishInt32 { topic, value, .. } => {
+            let mut int_msg = std_msgs::msg::Int32::new()
+                .ok_or_else(|| JoyRouterError::MessageError("Failed to create Int32".to_string()))?;
+            int_msg.data = *value;
+            Ok(Command::PublishInt32 { topic: topic.clone(), value: int_msg })
+        }
+        ActionType::PublishFloat64 { topic, value, .. } => {
+            let mut float_msg = std_msgs::msg::Float64::new()
+                .ok_or_else(|| JoyRouterError::MessageError("Failed to create Float64".to_string()))?;
+            float_msg.data = *value;
+            Ok(Command::PublishFloat64 { topic: topic.clone(), value: float_msg })
+        }
+        ActionType::PublishString { topic, value, .. } => {
+            let mut str_msg = std_msgs::msg::String::new()
+                .ok_or_else(|| JoyRouterError::MessageError("Failed to create String".to_string()))?;
+            if let Some(data_ros) = safe_drive::msg::RosString::<0>::new(value) {
+                str_msg.data = data_ros;
+            }
+            Ok(Command::PublishString { topic: topic.clone(), value: str_msg })
+        }
+        ActionType::CallService { service_name, service_type, .. } => {
+            Ok(Command::CallService { service_name: service_name.clone(), service_type: service_type.clone() })
+        }
+        ActionType::NoAction => {
+            Ok(Command::Stop)
+        }
+        ActionType::ActionSequence { .. } => {
+            Err(JoyRouterError::ConfigError(
+                "Action sequences not supported in this context".to_string()
+            ))
+        }
+        ActionType::ExecuteMacro { .. } => {
+            Err(JoyRouterError::ConfigError(
+                "Macro execution not supported in this context".to_string()
+            ))
+        }
+        ActionType::StateMachineAction { .. } => {
+            Err(JoyRouterError::ConfigError(
+                "State machine actions not supported in this context".to_string()
+            ))
+        }
+        ActionType::GestureAction { .. } => {
+            Err(JoyRouterError::ConfigError(
+                "Gesture actions not supported in this context".to_string()
+            ))
+        }
+    }
+}
+
 /// Checks if the enable button is pressed (if configured)
 fn is_enabled(profile: &Profile, button_tracker: &std::sync::MutexGuard<ButtonTracker>) -> bool {
     // Check single enable button
@@ -206,6 +292,11 @@ fn main_impl() -> JoyRouterResult<()> {
         Arc::clone(&command_queue)
     ));
     
+    // Create gesture detector for long press and gesture detection
+    let gesture_detector = Arc::new(Mutex::new(GestureDetector::new(
+        profile.gestures.clone()
+    )));
+    
     // Store the last received joy axes
     let last_joy_axes = Arc::new(Mutex::new(Vec::<f32>::new()));
     
@@ -248,6 +339,8 @@ fn main_impl() -> JoyRouterResult<()> {
     let logger_timer = Logger::new("joy_msg_router_timer");
     let sequence_executor_timer = Arc::clone(&sequence_executor);
     let state_machine_manager_timer = Arc::clone(&state_machine_manager);
+    let gesture_detector_timer = Arc::clone(&gesture_detector);
+    let gesture_queue_sender = queue_sender.clone();
     
     selector.add_wall_timer(
         "create_command",
@@ -610,6 +703,13 @@ fn main_impl() -> JoyRouterResult<()> {
                                 }
                             }
                         }
+                        ActionType::GestureAction { action } => {
+                            if just_pressed {
+                                pr_info!(logger_timer, "Button {} pressed - gesture action: {:?}", button_mapping.button, action);
+                                // Gesture actions would be implemented here
+                                // For now, just log the action
+                            }
+                        }
                     }
                 }
             }
@@ -617,6 +717,40 @@ fn main_impl() -> JoyRouterResult<()> {
             // Update state machines
             if let Err(e) = state_machine_manager_timer.update(&tracker) {
                 pr_warn!(logger_timer, "Failed to update state machines: {:?}", e);
+            }
+            
+            // Update gesture detection
+            match gesture_detector_timer.lock() {
+                Ok(mut detector) => {
+                    match detector.update(&tracker) {
+                        Ok(triggered_gestures) => {
+                            for (gesture_name, action) in triggered_gestures {
+                                pr_info!(logger_timer, "Gesture '{}' triggered", gesture_name);
+                                
+                                // Convert action to command and enqueue
+                                match action_to_command(&action) {
+                                    Ok(command) => {
+                                        if let Err(e) = gesture_queue_sender.send(command_queue::PrioritizedCommand {
+                                            command,
+                                            priority: Priority::Normal,
+                                        }) {
+                                            pr_warn!(logger_timer, "Failed to enqueue gesture command: {:?}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        pr_warn!(logger_timer, "Failed to convert gesture action to command: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            pr_warn!(logger_timer, "Failed to update gesture detector: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    pr_warn!(logger_timer, "Failed to lock gesture detector: {:?}", e);
+                }
             }
             
             // Determine which Twist to publish

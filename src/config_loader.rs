@@ -40,6 +40,10 @@ pub struct ProfileConfig {
     /// State machine definitions available in this profile
     #[serde(default)]
     pub state_machines: std::collections::HashMap<String, crate::state_machine::StateMachineDefinition>,
+    
+    /// Gesture definitions for long press and complex gestures
+    #[serde(default)]
+    pub gestures: std::collections::HashMap<String, crate::gesture_detector::GestureDefinition>,
 }
 
 /// Axis mapping configuration
@@ -227,6 +231,9 @@ impl ProfileConfig {
         
         // Copy state machines
         profile.state_machines = self.state_machines.clone();
+        
+        // Copy gestures
+        profile.gestures = self.gestures.clone();
         
         profile
     }

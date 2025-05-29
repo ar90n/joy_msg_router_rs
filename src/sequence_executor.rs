@@ -261,6 +261,11 @@ impl SequenceExecutor {
                     "State machine actions within sequences not supported".to_string()
                 ))
             }
+            ActionType::GestureAction { .. } => {
+                Err(JoyRouterError::ConfigError(
+                    "Gesture actions within sequences not supported".to_string()
+                ))
+            }
         }
     }
     
