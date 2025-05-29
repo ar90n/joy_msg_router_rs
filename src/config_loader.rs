@@ -1,8 +1,8 @@
 use crate::config::{Profile, AxisMapping, ButtonMapping, OutputField, ActionType};
+use crate::error::{JoyRouterError, JoyRouterResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use anyhow::{Result, Context};
 
 /// Top-level configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,30 +76,40 @@ fn default_enable_button() -> i64 {
 
 impl Configuration {
     /// Load configuration from a YAML file
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> JoyRouterResult<Self> {
         let content = std::fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read config file: {:?}", path.as_ref()))?;
+            .map_err(|e| JoyRouterError::ConfigError(
+                format!("Failed to read config file {:?}: {}", path.as_ref(), e)
+            ))?;
         
         let config: Self = serde_yaml::from_str(&content)
-            .with_context(|| format!("Failed to parse YAML from: {:?}", path.as_ref()))?;
+            .map_err(|e| JoyRouterError::ConfigError(
+                format!("Failed to parse YAML from {:?}: {}", path.as_ref(), e)
+            ))?;
         
         config.validate()?;
         Ok(config)
     }
     
     /// Validate the configuration
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> JoyRouterResult<()> {
         if self.profiles.is_empty() {
-            anyhow::bail!("Configuration must contain at least one profile");
+            return Err(JoyRouterError::ConfigError(
+                "Configuration must contain at least one profile".to_string()
+            ));
         }
         
         if !self.profiles.contains_key(&self.default_profile) {
-            anyhow::bail!("Default profile '{}' not found in profiles", self.default_profile);
+            return Err(JoyRouterError::ConfigError(
+                format!("Default profile '{}' not found in profiles", self.default_profile)
+            ));
         }
         
         for (name, profile) in &self.profiles {
             profile.validate()
-                .with_context(|| format!("Invalid profile '{}'", name))?;
+                .map_err(|e| JoyRouterError::ConfigError(
+                    format!("Invalid profile '{}': {}", name, e)
+                ))?;
         }
         
         Ok(())
@@ -119,18 +129,24 @@ impl Configuration {
 
 impl ProfileConfig {
     /// Validate the profile configuration
-    fn validate(&self) -> Result<()> {
+    fn validate(&self) -> JoyRouterResult<()> {
         // Validate axis mappings
         for (i, mapping) in self.axis_mappings.iter().enumerate() {
             if mapping.scale == 0.0 {
-                anyhow::bail!("Axis mapping {} has zero scale", i);
+                return Err(JoyRouterError::ConfigError(
+                    format!("Axis mapping {} has zero scale", i)
+                ));
             }
             if mapping.deadzone < 0.0 {
-                anyhow::bail!("Axis mapping {} has negative deadzone", i);
+                return Err(JoyRouterError::ConfigError(
+                    format!("Axis mapping {} has negative deadzone", i)
+                ));
             }
             // Validate output field
             OutputField::from_str(&mapping.output_field)
-                .with_context(|| format!("Invalid output field in axis mapping {}", i))?;
+                .map_err(|e| JoyRouterError::ConfigError(
+                    format!("Invalid output field in axis mapping {}: {}", i, e)
+                ))?;
         }
         
         Ok(())
@@ -202,20 +218,6 @@ impl ProfileConfig {
     }
 }
 
-impl OutputField {
-    /// Parse from string representation
-    fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "linear_x" => Ok(OutputField::LinearX),
-            "linear_y" => Ok(OutputField::LinearY),
-            "linear_z" => Ok(OutputField::LinearZ),
-            "angular_x" => Ok(OutputField::AngularX),
-            "angular_y" => Ok(OutputField::AngularY),
-            "angular_z" => Ok(OutputField::AngularZ),
-            _ => anyhow::bail!("Unknown output field: {}", s),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

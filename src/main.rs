@@ -1,4 +1,4 @@
-use safe_drive::{context::Context, error::DynError, logger::Logger, pr_debug, pr_info};
+use safe_drive::{context::Context, error::DynError, logger::Logger, pr_debug, pr_info, pr_error, pr_warn};
 use std::sync::{Arc, Mutex};
 
 // Import ROS message types
@@ -12,6 +12,8 @@ mod button_tracker;
 mod command_queue;
 mod timer_callbacks;
 mod publishers;
+mod error;
+mod logging;
 
 #[cfg(test)]
 mod test_multiple_message_types;
@@ -23,6 +25,8 @@ use config_loader::Configuration;
 use button_tracker::ButtonTracker;
 use command_queue::{CommandQueue, Command, Priority};
 use publishers::Publishers;
+use error::{JoyRouterError, JoyRouterResult, ErrorContext};
+use logging::{log_command_result};
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
@@ -30,7 +34,7 @@ struct EnableStateTracker {
 }
 
 /// Load configuration parameters from multiple sources
-fn load_parameters(_node: &safe_drive::node::Node, logger: &Logger) -> Result<(String, String), DynError> {
+fn load_parameters(_node: &safe_drive::node::Node, logger: &Logger) -> JoyRouterResult<(String, String)> {
     use std::env;
     
     // Default values
@@ -58,10 +62,14 @@ fn load_parameters(_node: &safe_drive::node::Node, logger: &Logger) -> Result<(S
             profile = args[i + 1].clone();
             pr_info!(logger, "Profile from command line: {}", profile);
         } else if arg.starts_with("--config=") {
-            config_file = arg.strip_prefix("--config=").unwrap().to_string();
+            config_file = arg.strip_prefix("--config=")
+                .ok_or_else(|| JoyRouterError::ConfigError("Invalid --config= argument".to_string()))?
+                .to_string();
             pr_info!(logger, "Config file from command line: {}", config_file);
         } else if arg.starts_with("--profile=") {
-            profile = arg.strip_prefix("--profile=").unwrap().to_string();
+            profile = arg.strip_prefix("--profile=")
+                .ok_or_else(|| JoyRouterError::ConfigError("Invalid --profile= argument".to_string()))?
+                .to_string();
             pr_info!(logger, "Profile from command line: {}", profile);
         }
     }
@@ -78,8 +86,9 @@ fn load_parameters(_node: &safe_drive::node::Node, logger: &Logger) -> Result<(S
 }
 
 /// Converts joy axes to a Twist message based on the given profile
-fn axes_to_twist(axes: &[f32], profile: &Profile) -> Result<Twist, String> {
-    let mut twist = Twist::new().ok_or_else(|| "Failed to create Twist".to_string())?;
+fn axes_to_twist(axes: &[f32], profile: &Profile) -> JoyRouterResult<Twist> {
+    let mut twist = Twist::new()
+        .ok_or_else(|| JoyRouterError::MessageError("Failed to create Twist message".to_string()))?;
 
     // Apply axis mappings
     for mapping in &profile.axis_mappings {
@@ -106,7 +115,7 @@ fn axes_to_twist(axes: &[f32], profile: &Profile) -> Result<Twist, String> {
 }
 
 /// Converts a Joy message to a Twist message based on the given profile  
-fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
+fn joy_to_twist(joy: &Joy, profile: &Profile) -> JoyRouterResult<Twist> {
     axes_to_twist(joy.axes.as_slice(), profile)
 }
 
@@ -131,23 +140,34 @@ fn is_enabled(profile: &Profile, button_tracker: &std::sync::MutexGuard<ButtonTr
 }
 
 fn main() -> Result<(), DynError> {
-    let ctx = Context::new()?;
-    let node = Arc::new(ctx.create_node("joy_msg_router", None, Default::default())?);
+    // Use proper error handling throughout
+    main_impl().map_err(|e| Box::new(e) as DynError)
+}
+
+fn main_impl() -> JoyRouterResult<()> {
+    let ctx = Context::new()
+        .context("Failed to create ROS2 context")?;
+    let node = Arc::new(ctx.create_node("joy_msg_router", None, Default::default())
+        .context("Failed to create ROS2 node")?);
     let logger = Logger::new("joy_msg_router");
 
     // Load configuration from parameters
     let (config_path, profile_name) = load_parameters(&node, &logger)?;
-    let configuration = Configuration::from_file(&config_path)?;
+    let configuration = Configuration::from_file(&config_path)
+        .map_err(|e| JoyRouterError::ConfigError(format!("Failed to load config file '{}': {}", config_path, e)))?;
     let profile = configuration.get_profile(&profile_name).unwrap_or_else(|| {
-        pr_info!(logger, "Failed to load profile '{}'. Using default profile.", profile_name);
+        log_warn!(&logger, "config_loader", "load_profile", 
+            &format!("Failed to load profile '{}'. Using default profile.", profile_name));
         configuration.get_default_profile()
     });
 
     // Create subscriber
-    let joy_subscriber = node.create_subscriber::<Joy>("joy", None)?;
+    let joy_subscriber = node.create_subscriber::<Joy>("joy", None)
+        .context("Failed to create joy subscriber")?;
     
     // Create publishers based on profile
-    let publishers = Arc::new(Publishers::from_profile(&node, &profile)?);
+    let publishers = Arc::new(Publishers::from_profile(&node, &profile)
+        .map_err(|e| JoyRouterError::PublisherError(format!("Failed to create publishers: {}", e)))?);
 
     pr_info!(logger, "Joy message router node started");
     
@@ -170,7 +190,8 @@ fn main() -> Result<(), DynError> {
     let last_joy_axes = Arc::new(Mutex::new(Vec::<f32>::new()));
     
     // Create a selector for handling callbacks
-    let mut selector = ctx.create_selector()?;
+    let mut selector = ctx.create_selector()
+        .context("Failed to create selector")?;
 
     let button_tracker_sub = Arc::clone(&button_tracker);
     let last_joy_axes_sub = Arc::clone(&last_joy_axes);
@@ -181,12 +202,22 @@ fn main() -> Result<(), DynError> {
             pr_debug!(logger, "Received Joy message");
             
             // Update button tracker
-            let mut tracker = button_tracker_sub.lock().unwrap();
-            tracker.update(msg.buttons.as_slice());
+            match button_tracker_sub.lock() {
+                Ok(mut tracker) => tracker.update(msg.buttons.as_slice()),
+                Err(e) => {
+                    pr_error!(logger, "Failed to lock button tracker: {}", e);
+                    return;
+                }
+            }
             
             // Store the axes for the timer callback
-            let mut last_axes = last_joy_axes_sub.lock().unwrap();
-            *last_axes = msg.axes.as_slice().to_vec();
+            match last_joy_axes_sub.lock() {
+                Ok(mut last_axes) => *last_axes = msg.axes.as_slice().to_vec(),
+                Err(e) => {
+                    pr_error!(logger, "Failed to lock joy axes: {}", e);
+                    return;
+                }
+            }
         }),
     );
 
@@ -201,9 +232,12 @@ fn main() -> Result<(), DynError> {
         profile.timer_config.continuous_interval(),
         Box::new(move || {
             // Get the last joy axes
-            let axes = {
-                let axes_guard = last_joy_axes_timer.lock().unwrap();
-                axes_guard.clone()
+            let axes = match last_joy_axes_timer.lock() {
+                Ok(axes_guard) => axes_guard.clone(),
+                Err(e) => {
+                    pr_error!(logger_timer, "Failed to lock joy axes: {}", e);
+                    return;
+                }
             };
             
             // If no joy message received yet, skip
@@ -212,7 +246,13 @@ fn main() -> Result<(), DynError> {
             }
             
             // Check if output is enabled
-            let tracker = button_tracker_timer.lock().unwrap();
+            let tracker = match button_tracker_timer.lock() {
+                Ok(t) => t,
+                Err(e) => {
+                    pr_error!(logger_timer, "Failed to lock button tracker: {}", e);
+                    return;
+                }
+            };
             if !is_enabled(&profile_clone, &tracker) {
                 pr_debug!(logger_timer, "Output disabled (enable button not pressed)");
                 return;
@@ -246,7 +286,7 @@ fn main() -> Result<(), DynError> {
                                             command: Command::PublishTwist(action_twist),
                                             priority: Priority::Normal,
                                         }) {
-                                            pr_info!(logger_timer, "Failed to enqueue one-shot Twist command: {:?}", e);
+                                            pr_warn!(logger_timer, "Failed to enqueue one-shot Twist command: {:?}", e);
                                         }
                                     }
                                 }
@@ -290,7 +330,7 @@ fn main() -> Result<(), DynError> {
                                             command: Command::PublishTwistStamped(twist_stamped),
                                             priority: Priority::Normal,
                                         }) {
-                                            pr_info!(logger_timer, "Failed to enqueue TwistStamped command: {:?}", e);
+                                            pr_warn!(logger_timer, "Failed to enqueue TwistStamped command: {:?}", e);
                                         }
                                     }
                                 }
@@ -310,7 +350,7 @@ fn main() -> Result<(), DynError> {
                                             command: Command::PublishBool { topic: topic.clone(), value: bool_msg },
                                             priority: Priority::Normal,
                                         }) {
-                                            pr_info!(logger_timer, "Failed to enqueue Bool command: {:?}", e);
+                                            pr_warn!(logger_timer, "Failed to enqueue Bool command: {:?}", e);
                                         }
                                     }
                                 }
@@ -542,76 +582,107 @@ fn main() -> Result<(), DynError> {
     // Spin the selector and process commands
     loop {
         // Wait for events with a timeout to allow command processing
-        selector.wait_timeout(std::time::Duration::from_millis(10))?;
+        selector.wait_timeout(std::time::Duration::from_millis(10))
+            .context("Selector wait failed")?;
         
         // Process pending commands
         command_queue.process_pending(|cmd| {
-            match cmd.command {
+            let command_str = format!("{:?}", cmd.command);
+            let result = match cmd.command {
                 Command::PublishTwist(twist) => {
-                    if let Err(e) = publishers_for_processing.twist_publisher.send(&twist) {
-                        pr_info!(process_logger, "Failed to publish Twist message: {:?}", e);
-                    }
+                    publishers_for_processing.twist_publisher.send(&twist)
+                        .map_err(|e| JoyRouterError::PublisherError(
+                            format!("Failed to publish Twist message: {}", e)
+                        ))
                 }
                 Command::PublishTwistStamped(twist_stamped) => {
                     if let Some(ref publisher) = publishers_for_processing.twist_stamped_publisher {
-                        if let Err(e) = publisher.send(&twist_stamped) {
-                            pr_info!(process_logger, "Failed to publish TwistStamped message: {:?}", e);
-                        }
+                        publisher.send(&twist_stamped)
+                            .map_err(|e| JoyRouterError::PublisherError(
+                                format!("Failed to publish TwistStamped message: {}", e)
+                            ))
                     } else {
-                        pr_info!(process_logger, "TwistStamped publisher not configured");
+                        Err(JoyRouterError::PublisherError(
+                            "TwistStamped publisher not configured".to_string()
+                        ))
                     }
                 }
                 Command::PublishBool { topic, value } => {
                     if let Some(publisher) = publishers_for_processing.bool_publishers.get(&topic) {
-                        if let Err(e) = publisher.send(&value) {
-                            pr_info!(process_logger, "Failed to publish Bool message to {}: {:?}", topic, e);
-                        }
+                        publisher.send(&value)
+                            .map_err(|e| JoyRouterError::PublisherError(
+                                format!("Failed to publish Bool message to {}: {}", topic, e)
+                            ))
                     } else {
-                        pr_info!(process_logger, "Bool publisher for topic '{}' not configured", topic);
+                        Err(JoyRouterError::PublisherError(
+                            format!("Bool publisher for topic '{}' not configured", topic)
+                        ))
                     }
                 }
                 Command::PublishInt32 { topic, value } => {
                     if let Some(publisher) = publishers_for_processing.int32_publishers.get(&topic) {
-                        if let Err(e) = publisher.send(&value) {
-                            pr_info!(process_logger, "Failed to publish Int32 message to {}: {:?}", topic, e);
-                        }
+                        publisher.send(&value)
+                            .map_err(|e| JoyRouterError::PublisherError(
+                                format!("Failed to publish Int32 message to {}: {}", topic, e)
+                            ))
                     } else {
-                        pr_info!(process_logger, "Int32 publisher for topic '{}' not configured", topic);
+                        Err(JoyRouterError::PublisherError(
+                            format!("Int32 publisher for topic '{}' not configured", topic)
+                        ))
                     }
                 }
                 Command::PublishFloat64 { topic, value } => {
                     if let Some(publisher) = publishers_for_processing.float64_publishers.get(&topic) {
-                        if let Err(e) = publisher.send(&value) {
-                            pr_info!(process_logger, "Failed to publish Float64 message to {}: {:?}", topic, e);
-                        }
+                        publisher.send(&value)
+                            .map_err(|e| JoyRouterError::PublisherError(
+                                format!("Failed to publish Float64 message to {}: {}", topic, e)
+                            ))
                     } else {
-                        pr_info!(process_logger, "Float64 publisher for topic '{}' not configured", topic);
+                        Err(JoyRouterError::PublisherError(
+                            format!("Float64 publisher for topic '{}' not configured", topic)
+                        ))
                     }
                 }
                 Command::PublishString { topic, value } => {
                     if let Some(publisher) = publishers_for_processing.string_publishers.get(&topic) {
-                        if let Err(e) = publisher.send(&value) {
-                            pr_info!(process_logger, "Failed to publish String message to {}: {:?}", topic, e);
-                        }
+                        publisher.send(&value)
+                            .map_err(|e| JoyRouterError::PublisherError(
+                                format!("Failed to publish String message to {}: {}", topic, e)
+                            ))
                     } else {
-                        pr_info!(process_logger, "String publisher for topic '{}' not configured", topic);
+                        Err(JoyRouterError::PublisherError(
+                            format!("String publisher for topic '{}' not configured", topic)
+                        ))
                     }
                 }
                 Command::CallService { service_name, service_type } => {
-                    pr_info!(process_logger, "Would call service: {} (type: {})", service_name, service_type);
                     // TODO: Implement actual service client when safe_drive supports it
+                    log_info!(&process_logger, "service_client", "call", 
+                        &format!("Would call service: {} (type: {})", service_name, service_type));
+                    Ok(())
                 }
                 Command::Stop => {
                     // Send zero twist to cmd_vel
                     if let Some(zero_twist) = Twist::new() {
-                        if let Err(e) = publishers_for_processing.twist_publisher.send(&zero_twist) {
-                            pr_info!(process_logger, "Failed to publish stop command: {:?}", e);
-                        }
+                        publishers_for_processing.twist_publisher.send(&zero_twist)
+                            .map_err(|e| JoyRouterError::PublisherError(
+                                format!("Failed to publish stop command: {}", e)
+                            ))
+                    } else {
+                        Err(JoyRouterError::MessageError(
+                            "Failed to create zero Twist message".to_string()
+                        ))
                     }
                 }
-            }
+            };
+            
+            // Log command result
+            log_command_result(&process_logger, &command_str, result);
             Ok(())
-        })?;
+        })
+        .map_err(|e| JoyRouterError::CommandError(
+            format!("Failed to process command queue: {}", e)
+        ))?;
     }
 }
 

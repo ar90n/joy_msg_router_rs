@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use crate::error::{JoyRouterError, JoyRouterResult};
 
 /// Represents a configuration profile for joy message routing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +95,7 @@ pub struct ButtonMapping {
 }
 
 /// Enum representing different output fields for Twist messages
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputField {
     LinearX,
@@ -103,6 +104,23 @@ pub enum OutputField {
     AngularX,
     AngularY,
     AngularZ,
+}
+
+impl OutputField {
+    /// Parse from string representation
+    pub fn from_str(s: &str) -> JoyRouterResult<Self> {
+        match s {
+            "linear_x" => Ok(OutputField::LinearX),
+            "linear_y" => Ok(OutputField::LinearY),
+            "linear_z" => Ok(OutputField::LinearZ),
+            "angular_x" => Ok(OutputField::AngularX),
+            "angular_y" => Ok(OutputField::AngularY),
+            "angular_z" => Ok(OutputField::AngularZ),
+            _ => Err(JoyRouterError::ConfigError(
+                format!("Invalid output field: '{}'. Expected one of: linear_x, linear_y, linear_z, angular_x, angular_y, angular_z", s)
+            )),
+        }
+    }
 }
 
 /// Enum representing different action types
@@ -203,12 +221,14 @@ impl Profile {
     }
     
     /// Validates the profile configuration
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> JoyRouterResult<()> {
         // Check for duplicate axis mappings
         let mut used_axes = std::collections::HashSet::new();
         for mapping in &self.axis_mappings {
             if !used_axes.insert(mapping.joy_axis) {
-                return Err(format!("Duplicate mapping for axis {}", mapping.joy_axis));
+                return Err(JoyRouterError::ConfigError(
+                    format!("Duplicate mapping for axis {}", mapping.joy_axis)
+                ));
             }
         }
         
@@ -216,17 +236,23 @@ impl Profile {
         let mut used_buttons = std::collections::HashSet::new();
         for mapping in &self.button_mappings {
             if !used_buttons.insert(mapping.button) {
-                return Err(format!("Duplicate mapping for button {}", mapping.button));
+                return Err(JoyRouterError::ConfigError(
+                    format!("Duplicate mapping for button {}", mapping.button)
+                ));
             }
         }
         
         // Validate scale and deadzone values
         for mapping in &self.axis_mappings {
             if mapping.deadzone < 0.0 {
-                return Err(format!("Negative deadzone for axis {}", mapping.joy_axis));
+                return Err(JoyRouterError::ConfigError(
+                    format!("Negative deadzone for axis {}", mapping.joy_axis)
+                ));
             }
             if mapping.scale == 0.0 {
-                return Err(format!("Zero scale for axis {}", mapping.joy_axis));
+                return Err(JoyRouterError::ConfigError(
+                    format!("Zero scale for axis {}", mapping.joy_axis)
+                ));
             }
         }
         

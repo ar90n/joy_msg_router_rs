@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use safe_drive::node::Node;
 use safe_drive::topic::publisher::Publisher;
-use safe_drive::error::DynError;
 use geometry_msgs::msg::{Twist, TwistStamped};
 use std_msgs::msg::{Bool, Int32, Float64, String as StringMsg};
+use crate::error::{JoyRouterError, JoyRouterResult, ErrorContext};
 
 /// Container for all publishers used by the node
 pub struct Publishers {
@@ -18,9 +18,10 @@ pub struct Publishers {
 
 impl Publishers {
     /// Create publishers based on the profile configuration
-    pub fn from_profile(node: &Arc<Node>, profile: &crate::config::Profile) -> Result<Self, DynError> {
+    pub fn from_profile(node: &Arc<Node>, profile: &crate::config::Profile) -> JoyRouterResult<Self> {
         // Always create the default twist publisher
-        let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)?;
+        let twist_publisher = node.create_publisher::<Twist>("cmd_vel", None)
+            .context("Failed to create twist publisher on /cmd_vel")?;
         
         // Check if we need a TwistStamped publisher
         let mut need_twist_stamped = false;
@@ -53,7 +54,8 @@ impl Publishers {
         
         // Create TwistStamped publisher if needed
         let twist_stamped_publisher = if need_twist_stamped {
-            Some(node.create_publisher::<TwistStamped>("cmd_vel_stamped", None)?)
+            Some(node.create_publisher::<TwistStamped>("cmd_vel_stamped", None)
+                .context("Failed to create twist stamped publisher on /cmd_vel_stamped")?)
         } else {
             None
         };
@@ -61,25 +63,49 @@ impl Publishers {
         // Create Bool publishers
         let mut bool_publishers = HashMap::new();
         for topic in bool_topics {
-            bool_publishers.insert(topic.clone(), node.create_publisher::<Bool>(&topic, None)?);
+            bool_publishers.insert(
+                topic.clone(), 
+                node.create_publisher::<Bool>(&topic, None)
+                    .map_err(|e| JoyRouterError::PublisherError(
+                        format!("Failed to create Bool publisher on {}: {}", topic, e)
+                    ))?
+            );
         }
         
         // Create Int32 publishers
         let mut int32_publishers = HashMap::new();
         for topic in int32_topics {
-            int32_publishers.insert(topic.clone(), node.create_publisher::<Int32>(&topic, None)?);
+            int32_publishers.insert(
+                topic.clone(), 
+                node.create_publisher::<Int32>(&topic, None)
+                    .map_err(|e| JoyRouterError::PublisherError(
+                        format!("Failed to create Int32 publisher on {}: {}", topic, e)
+                    ))?
+            );
         }
         
         // Create Float64 publishers
         let mut float64_publishers = HashMap::new();
         for topic in float64_topics {
-            float64_publishers.insert(topic.clone(), node.create_publisher::<Float64>(&topic, None)?);
+            float64_publishers.insert(
+                topic.clone(), 
+                node.create_publisher::<Float64>(&topic, None)
+                    .map_err(|e| JoyRouterError::PublisherError(
+                        format!("Failed to create Float64 publisher on {}: {}", topic, e)
+                    ))?
+            );
         }
         
         // Create String publishers
         let mut string_publishers = HashMap::new();
         for topic in string_topics {
-            string_publishers.insert(topic.clone(), node.create_publisher::<StringMsg>(&topic, None)?);
+            string_publishers.insert(
+                topic.clone(), 
+                node.create_publisher::<StringMsg>(&topic, None)
+                    .map_err(|e| JoyRouterError::PublisherError(
+                        format!("Failed to create String publisher on {}: {}", topic, e)
+                    ))?
+            );
         }
         
         Ok(Self {

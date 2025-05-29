@@ -1,7 +1,7 @@
 use std::sync::mpsc::{channel, Sender, Receiver};
 use geometry_msgs::msg::{Twist, TwistStamped};
 use std_msgs::msg::{Bool, Int32, Float64, String as StringMsg};
-use safe_drive::error::DynError;
+use crate::error::{JoyRouterError, JoyRouterResult};
 
 /// Represents different types of commands that can be queued
 #[derive(Debug)]
@@ -62,15 +62,17 @@ impl CommandQueue {
     }
 
     /// Enqueue a command with normal priority
-    pub fn enqueue(&self, command: Command) -> Result<(), DynError> {
+    pub fn enqueue(&self, command: Command) -> JoyRouterResult<()> {
         self.enqueue_with_priority(command, Priority::Normal)
     }
 
     /// Enqueue a command with specific priority
-    pub fn enqueue_with_priority(&self, command: Command, priority: Priority) -> Result<(), DynError> {
+    pub fn enqueue_with_priority(&self, command: Command, priority: Priority) -> JoyRouterResult<()> {
         self.sender
             .send(PrioritizedCommand { command, priority })
-            .map_err(|e| format!("Failed to enqueue command: {}", e).into())
+            .map_err(|e| JoyRouterError::CommandError(
+                format!("Failed to enqueue command: {}", e)
+            ))
     }
 
     /// Try to dequeue a command (non-blocking)
@@ -79,9 +81,9 @@ impl CommandQueue {
     }
 
     /// Process all pending commands with a handler function
-    pub fn process_pending<F>(&self, mut handler: F) -> Result<(), DynError>
+    pub fn process_pending<F>(&self, mut handler: F) -> JoyRouterResult<()>
     where
-        F: FnMut(PrioritizedCommand) -> Result<(), DynError>,
+        F: FnMut(PrioritizedCommand) -> JoyRouterResult<()>,
     {
         // Collect all pending commands and sort by priority
         let mut commands = Vec::new();
