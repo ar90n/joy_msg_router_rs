@@ -1,6 +1,5 @@
 use safe_drive::logger::Logger;
 use safe_drive::{pr_debug, pr_error, pr_info, pr_warn};
-use crate::error::JoyRouterError;
 
 /// Log levels for structured logging
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +25,7 @@ pub fn log_with_context(logger: &Logger, level: LogLevel, context: LogContext, m
     } else {
         format!("{} {}", prefix, message)
     };
-    
+
     match level {
         LogLevel::Debug => pr_debug!(logger, "{}", full_message),
         LogLevel::Info => pr_info!(logger, "{}", full_message),
@@ -36,7 +35,7 @@ pub fn log_with_context(logger: &Logger, level: LogLevel, context: LogContext, m
 }
 
 /// Log an error with full context
-pub fn log_error(logger: &Logger, context: LogContext, error: &JoyRouterError) {
+pub fn log_error(logger: &Logger, context: LogContext, error: &anyhow::Error) {
     log_with_context(logger, LogLevel::Error, context, &error.to_string());
 }
 
@@ -52,7 +51,7 @@ macro_rules! log_debug {
                 function: $function,
                 details: None,
             },
-            $msg
+            $msg,
         )
     };
     ($logger:expr, $module:expr, $function:expr, $msg:expr, $details:expr) => {
@@ -64,7 +63,7 @@ macro_rules! log_debug {
                 function: $function,
                 details: Some($details),
             },
-            $msg
+            $msg,
         )
     };
 }
@@ -80,7 +79,7 @@ macro_rules! log_info {
                 function: $function,
                 details: None,
             },
-            $msg
+            $msg,
         )
     };
     ($logger:expr, $module:expr, $function:expr, $msg:expr, $details:expr) => {
@@ -92,7 +91,7 @@ macro_rules! log_info {
                 function: $function,
                 details: Some($details),
             },
-            $msg
+            $msg,
         )
     };
 }
@@ -108,7 +107,7 @@ macro_rules! log_warn {
                 function: $function,
                 details: None,
             },
-            $msg
+            $msg,
         )
     };
     ($logger:expr, $module:expr, $function:expr, $msg:expr, $details:expr) => {
@@ -120,7 +119,7 @@ macro_rules! log_warn {
                 function: $function,
                 details: Some($details),
             },
-            $msg
+            $msg,
         )
     };
 }
@@ -135,13 +134,13 @@ macro_rules! log_error_detail {
                 function: $function,
                 details: None,
             },
-            $error
+            $error,
         )
     };
 }
 
 /// Helper for logging command processing results
-pub fn log_command_result(logger: &Logger, command: &str, result: Result<(), JoyRouterError>) {
+pub fn log_command_result(logger: &Logger, command: &str, result: anyhow::Result<()>) {
     match result {
         Ok(()) => log_with_context(
             logger,
@@ -151,7 +150,7 @@ pub fn log_command_result(logger: &Logger, command: &str, result: Result<(), Joy
                 function: "process",
                 details: Some(command),
             },
-            "Command processed successfully"
+            "Command processed successfully",
         ),
         Err(ref e) => log_error(
             logger,
@@ -160,7 +159,7 @@ pub fn log_command_result(logger: &Logger, command: &str, result: Result<(), Joy
                 function: "process",
                 details: Some(command),
             },
-            e
+            e,
         ),
     }
 }
@@ -168,13 +167,13 @@ pub fn log_command_result(logger: &Logger, command: &str, result: Result<(), Joy
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_log_levels() {
         assert!(LogLevel::Debug != LogLevel::Error);
         assert_eq!(LogLevel::Info, LogLevel::Info);
     }
-    
+
     #[test]
     fn test_log_context_formatting() {
         let context = LogContext {
@@ -182,7 +181,7 @@ mod tests {
             function: "test_function",
             details: Some("extra info"),
         };
-        
+
         // Test that context is properly structured
         assert_eq!(context.module, "test_module");
         assert_eq!(context.function, "test_function");
