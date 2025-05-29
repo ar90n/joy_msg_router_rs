@@ -89,6 +89,11 @@ impl ButtonTracker {
     pub fn is_any_pressed(&self, button_indices: &[usize]) -> bool {
         button_indices.iter().any(|&index| self.is_pressed(index))
     }
+    
+    /// Get the number of buttons being tracked
+    pub fn button_count(&self) -> usize {
+        self.current_states.len().max(self.previous_states.len())
+    }
 }
 
 impl Default for ButtonTracker {

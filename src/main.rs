@@ -1,6 +1,5 @@
 use safe_drive::{context::Context, error::DynError, logger::Logger, pr_debug, pr_info};
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 
 // Import ROS message types
 use geometry_msgs::msg::Twist;
@@ -73,18 +72,18 @@ fn load_parameters(_node: &safe_drive::node::Node, logger: &Logger) -> Result<(S
     Ok((config_file, profile))
 }
 
-/// Converts a Joy message to a Twist message based on the given profile
-fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
+/// Converts joy axes to a Twist message based on the given profile
+fn axes_to_twist(axes: &[f32], profile: &Profile) -> Result<Twist, String> {
     let mut twist = Twist::new().ok_or_else(|| "Failed to create Twist".to_string())?;
 
     // Apply axis mappings
     for mapping in &profile.axis_mappings {
         // Check if the axis index is valid
-        if mapping.joy_axis >= joy.axes.len() {
+        if mapping.joy_axis >= axes.len() {
             continue; // Skip invalid indices gracefully
         }
 
-        let value = joy.axes.as_slice()[mapping.joy_axis] as f64;
+        let value = axes[mapping.joy_axis] as f64;
         let converted_value = mapping.apply(value);
 
         // Set the appropriate field in the Twist message
@@ -101,8 +100,13 @@ fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
     Ok(twist)
 }
 
+/// Converts a Joy message to a Twist message based on the given profile  
+fn joy_to_twist(joy: &Joy, profile: &Profile) -> Result<Twist, String> {
+    axes_to_twist(joy.axes.as_slice(), profile)
+}
+
 /// Checks if the enable button is pressed (if configured)
-fn is_enabled(_joy: &Joy, profile: &Profile, button_tracker: &ButtonTracker) -> bool {
+fn is_enabled(profile: &Profile, button_tracker: &std::sync::MutexGuard<ButtonTracker>) -> bool {
     // Check single enable button
     if let Some(button_idx) = profile.enable_button {
         if button_tracker.is_pressed(button_idx) {
@@ -148,101 +152,73 @@ fn main() -> Result<(), DynError> {
     pr_info!(logger, "Button mappings: {} configured", profile.button_mappings.len());
 
     // Create a button tracker
-    let mut button_tracker = ButtonTracker::new();
+    let button_tracker = Arc::new(Mutex::new(ButtonTracker::new()));
     let _enable_state = EnableStateTracker { _was_enabled: false };
     
     // Create command queue for decoupled processing
     let command_queue = Arc::new(CommandQueue::new());
     let queue_sender = command_queue.get_sender();
     
-    // Track active button timers (button_id -> timer_active)
-    let active_timers = Arc::new(Mutex::new(HashMap::<usize, bool>::new()));
-    let active_timers_for_cb = Arc::clone(&active_timers);
+    // Store the last received joy axes
+    let last_joy_axes = Arc::new(Mutex::new(Vec::<f32>::new()));
     
     // Create a selector for handling callbacks
     let mut selector = ctx.create_selector()?;
-    
-    // Register timers for continuous button actions
-    for button_mapping in profile.button_mappings.iter() {
-        match &button_mapping.action {
-            ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z, once } if !once => {
-                let button_id = button_mapping.button;
-                let active_timers_clone = Arc::clone(&active_timers);
-                let queue_sender_clone = queue_sender.clone();
-                let twist_values = (*linear_x, *linear_y, *linear_z, *angular_x, *angular_y, *angular_z);
-                
-                selector.add_wall_timer(
-                    &format!("button_{}_twist", button_id),
-                    profile.timer_config.continuous_interval(),
-                    Box::new(move || {
-                        let timers = active_timers_clone.lock().unwrap();
-                        if timers.get(&button_id).copied().unwrap_or(false) {
-                            if let Some(mut twist) = Twist::new() {
-                                twist.linear.x = twist_values.0;
-                                twist.linear.y = twist_values.1;
-                                twist.linear.z = twist_values.2;
-                                twist.angular.x = twist_values.3;
-                                twist.angular.y = twist_values.4;
-                                twist.angular.z = twist_values.5;
-                                
-                                let _ = queue_sender_clone.send(command_queue::PrioritizedCommand {
-                                    command: Command::PublishTwist(twist),
-                                    priority: Priority::Normal,
-                                });
-                            }
-                        }
-                    }),
-                );
-            }
-            ActionType::CallService { service_name, service_type, once } if !once => {
-                let button_id = button_mapping.button;
-                let active_timers_clone = Arc::clone(&active_timers);
-                let queue_sender_clone = queue_sender.clone();
-                let service_name_clone = service_name.clone();
-                let service_type_clone = service_type.clone();
-                
-                selector.add_wall_timer(
-                    &format!("button_{}_service", button_id),
-                    profile.timer_config.continuous_interval(),
-                    Box::new(move || {
-                        let timers = active_timers_clone.lock().unwrap();
-                        if timers.get(&button_id).copied().unwrap_or(false) {
-                            let _ = queue_sender_clone.send(command_queue::PrioritizedCommand {
-                                command: Command::CallService {
-                                    service_name: service_name_clone.clone(),
-                                    service_type: service_type_clone.clone(),
-                                },
-                                priority: Priority::Normal,
-                            });
-                        }
-                    }),
-                );
-            }
-            _ => {} // No timer needed for one-shot actions or NoAction
-        }
-    }
 
+    let button_tracker_sub = Arc::clone(&button_tracker);
+    let last_joy_axes_sub = Arc::clone(&last_joy_axes);
+    
     selector.add_subscriber(
         joy_subscriber,
         Box::new(move |msg| {
             pr_debug!(logger, "Received Joy message");
-
+            
             // Update button tracker
-            button_tracker.update(msg.buttons.as_slice());
+            let mut tracker = button_tracker_sub.lock().unwrap();
+            tracker.update(msg.buttons.as_slice());
+            
+            // Store the axes for the timer callback
+            let mut last_axes = last_joy_axes_sub.lock().unwrap();
+            *last_axes = msg.axes.as_slice().to_vec();
+        }),
+    );
 
-            // Check if output is enabled
-            if !is_enabled(&msg, &profile, &button_tracker) {
-                pr_debug!(logger, "Output disabled (enable button not pressed)");
+    let button_tracker_timer = Arc::clone(&button_tracker);
+    let last_joy_axes_timer = Arc::clone(&last_joy_axes);
+    let queue_sender_timer = queue_sender.clone();
+    let profile_clone = profile.clone();
+    let logger_timer = Logger::new("joy_msg_router_timer");
+    
+    selector.add_wall_timer(
+        "create_command",
+        profile.timer_config.continuous_interval(),
+        Box::new(move || {
+            // Get the last joy axes
+            let axes = {
+                let axes_guard = last_joy_axes_timer.lock().unwrap();
+                axes_guard.clone()
+            };
+            
+            // If no joy message received yet, skip
+            if axes.is_empty() {
                 return;
             }
-
-            // Process button actions first (these can override axis-based movement)
-            let button_twist_override = None;
-            for button_mapping in &profile.button_mappings {
-                if button_mapping.button < msg.buttons.len() {
-                    let _button_pressed = button_tracker.is_pressed(button_mapping.button);
-                    let just_pressed = button_tracker.just_pressed(button_mapping.button);
-                    let just_released = button_tracker.just_released(button_mapping.button);
+            
+            // Check if output is enabled
+            let tracker = button_tracker_timer.lock().unwrap();
+            if !is_enabled(&profile_clone, &tracker) {
+                pr_debug!(logger_timer, "Output disabled (enable button not pressed)");
+                return;
+            }
+            
+            // Process button actions first
+            let mut button_twist_override = None;
+            let button_count = tracker.button_count();
+            for button_mapping in &profile_clone.button_mappings {
+                if button_mapping.button < button_count {
+                    let button_pressed = tracker.is_pressed(button_mapping.button);
+                    let just_pressed = tracker.just_pressed(button_mapping.button);
+                    let just_released = tracker.just_released(button_mapping.button);
                     
                     match &button_mapping.action {
                         ActionType::PublishTwist { linear_x, linear_y, linear_z, angular_x, angular_y, angular_z, once } => {
@@ -257,30 +233,31 @@ fn main() -> Result<(), DynError> {
                                         action_twist.angular.y = *angular_y;
                                         action_twist.angular.z = *angular_z;
                                         
-                                        pr_info!(logger, "Button {} pressed - publishing one-shot twist", button_mapping.button);
+                                        pr_info!(logger_timer, "Button {} pressed - publishing one-shot twist", button_mapping.button);
                                         
-                                        if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                                        if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
                                             command: Command::PublishTwist(action_twist),
                                             priority: Priority::Normal,
                                         }) {
-                                            pr_info!(logger, "Failed to enqueue one-shot Twist command: {:?}", e);
+                                            pr_info!(logger_timer, "Failed to enqueue one-shot Twist command: {:?}", e);
                                         }
                                     }
                                 }
-                            } else {
+                            } else if button_pressed {
                                 // Continuous action while button is held
-                                if just_pressed {
-                                    pr_info!(logger, "Button {} pressed - starting continuous twist", button_mapping.button);
+                                if let Some(mut action_twist) = Twist::new() {
+                                    action_twist.linear.x = *linear_x;
+                                    action_twist.linear.y = *linear_y;
+                                    action_twist.linear.z = *linear_z;
+                                    action_twist.angular.x = *angular_x;
+                                    action_twist.angular.y = *angular_y;
+                                    action_twist.angular.z = *angular_z;
                                     
-                                    // Enable timer for this button
-                                    let mut timers = active_timers_for_cb.lock().unwrap();
-                                    timers.insert(button_mapping.button, true);
-                                } else if just_released {
-                                    pr_info!(logger, "Button {} released - stopping continuous twist", button_mapping.button);
+                                    button_twist_override = Some(action_twist);
                                     
-                                    // Disable timer for this button
-                                    let mut timers = active_timers_for_cb.lock().unwrap();
-                                    timers.insert(button_mapping.button, false);
+                                    if just_pressed {
+                                        pr_info!(logger_timer, "Button {} pressed - publishing continuous twist", button_mapping.button);
+                                    }
                                 }
                             }
                         }
@@ -288,92 +265,100 @@ fn main() -> Result<(), DynError> {
                             if *once {
                                 // One-shot service call on button press
                                 if just_pressed {
-                                    pr_info!(logger, "Button {} pressed - calling service once: {}", 
+                                    pr_info!(logger_timer, "Button {} pressed - calling service once: {}", 
                                             button_mapping.button, service_name);
                                     
-                                    if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                                    if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
                                         command: Command::CallService {
                                             service_name: service_name.clone(),
                                             service_type: service_type.clone(),
                                         },
-                                        priority: Priority::High, // Service calls get higher priority
-                                }) {
-                                    pr_info!(logger, "Failed to enqueue service call: {:?}", e);
+                                        priority: Priority::High,
+                                    }) {
+                                        pr_info!(logger_timer, "Failed to enqueue service call: {:?}", e);
+                                    }
                                 }
-                            }
-                            } else {
+                            } else if button_pressed {
                                 // Continuous service calls while button is held
                                 if just_pressed {
-                                    pr_info!(logger, "Button {} pressed - starting continuous service calls: {}", 
+                                    pr_info!(logger_timer, "Button {} pressed - starting continuous service calls: {}", 
                                             button_mapping.button, service_name);
-                                    
-                                    // Enable timer for this button
-                                    let mut timers = active_timers_for_cb.lock().unwrap();
-                                    timers.insert(button_mapping.button, true);
-                                } else if just_released {
-                                    pr_info!(logger, "Button {} released - stopping continuous service calls: {}", 
+                                }
+                                
+                                if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                                    command: Command::CallService {
+                                        service_name: service_name.clone(),
+                                        service_type: service_type.clone(),
+                                    },
+                                    priority: Priority::Normal,
+                                }) {
+                                    pr_debug!(logger_timer, "Failed to enqueue continuous service call: {:?}", e);
+                                }
+                                
+                                if just_released {
+                                    pr_info!(logger_timer, "Button {} released - stopping continuous service calls: {}", 
                                             button_mapping.button, service_name);
-                                    
-                                    // Disable timer for this button
-                                    let mut timers = active_timers_for_cb.lock().unwrap();
-                                    timers.insert(button_mapping.button, false);
                                 }
                             }
                         }
                         ActionType::NoAction => {
                             if just_pressed {
-                                pr_info!(logger, "Button {} pressed - stop action", button_mapping.button);
+                                pr_info!(logger_timer, "Button {} pressed - stop action", button_mapping.button);
                                 
                                 // Send stop command
-                                if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
+                                if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
                                     command: Command::Stop,
                                     priority: Priority::High,
                                 }) {
-                                    pr_info!(logger, "Failed to enqueue stop command: {:?}", e);
+                                    pr_info!(logger_timer, "Failed to enqueue stop command: {:?}", e);
                                 }
                             }
                         }
                     }
                 }
             }
-
+            
             // Determine which Twist to publish
             let twist_to_publish = if let Some(button_twist) = button_twist_override {
                 // Button action takes precedence
                 button_twist
             } else {
                 // Use axis-based conversion
-                match joy_to_twist(&msg, &profile) {
+                match axes_to_twist(&axes, &profile_clone) {
                     Ok(twist) => twist,
                     Err(e) => {
-                        pr_info!(logger, "Failed to convert Joy to Twist: {}", e);
+                        pr_debug!(logger_timer, "Failed to convert axes to twist: {}", e);
                         return;
                     }
                 }
             };
-
-            // Log non-zero values
-            if twist_to_publish.linear.x != 0.0 || twist_to_publish.angular.z != 0.0 {
+            
+            // Check if it's a non-zero twist before publishing
+            if twist_to_publish.linear.x != 0.0 || twist_to_publish.linear.y != 0.0 ||
+               twist_to_publish.linear.z != 0.0 || twist_to_publish.angular.x != 0.0 ||
+               twist_to_publish.angular.y != 0.0 || twist_to_publish.angular.z != 0.0 {
                 pr_debug!(
-                    logger,
-                    "Publishing Twist: linear.x={:.3}, angular.z={:.3}",
+                    logger_timer,
+                    "Publishing Twist: linear=({:.2}, {:.2}, {:.2}), angular=({:.2}, {:.2}, {:.2})",
                     twist_to_publish.linear.x,
+                    twist_to_publish.linear.y,
+                    twist_to_publish.linear.z,
+                    twist_to_publish.angular.x,
+                    twist_to_publish.angular.y,
                     twist_to_publish.angular.z
                 );
-            }
-
-            // Enqueue the Twist command instead of directly publishing
-            if let Err(e) = queue_sender.send(command_queue::PrioritizedCommand {
-                command: Command::PublishTwist(twist_to_publish),
-                priority: Priority::Normal,
-            }) {
-                pr_info!(logger, "Failed to enqueue Twist command: {:?}", e);
+                
+                // Enqueue the Twist command
+                if let Err(e) = queue_sender_timer.send(command_queue::PrioritizedCommand {
+                    command: Command::PublishTwist(twist_to_publish),
+                    priority: Priority::Normal,
+                }) {
+                    pr_info!(logger_timer, "Failed to enqueue Twist command: {:?}", e);
+                }
             }
         }),
     );
 
-    // Clone command queue for the processing loop
-    let queue_for_processing = Arc::clone(&command_queue);
     
     // Create a separate logger for the command processing loop
     let process_logger = Logger::new("joy_msg_router_cmd_processor");
@@ -384,7 +369,7 @@ fn main() -> Result<(), DynError> {
         selector.wait_timeout(std::time::Duration::from_millis(10))?;
         
         // Process pending commands
-        queue_for_processing.process_pending(|cmd| {
+        command_queue.process_pending(|cmd| {
             match cmd.command {
                 Command::PublishTwist(twist) => {
                     if let Err(e) = twist_publisher.send(&twist) {
@@ -488,44 +473,69 @@ mod tests {
 
     #[test]
     fn test_is_enabled_no_button() {
-        let joy = create_test_joy(vec![], vec![0, 1, 0]);
+        let _joy = create_test_joy(vec![], vec![0, 1, 0]);
         let profile = Profile::new("test".to_string()); // No enable button
-        let mut tracker = ButtonTracker::new();
-        tracker.update(&[0, 1, 0]);
+        let tracker = Arc::new(Mutex::new(ButtonTracker::new()));
+        {
+            let mut tracker_guard = tracker.lock().unwrap();
+            tracker_guard.update(&[0, 1, 0]);
+        }
+        let tracker_guard = tracker.lock().unwrap();
 
-        assert!(is_enabled(&joy, &profile, &tracker));
+        assert!(is_enabled(&profile, &tracker_guard));
     }
 
     #[test]
     fn test_is_enabled_with_button() {
-        let joy = create_test_joy(vec![], vec![0, 1, 0]);
+        let _joy = create_test_joy(vec![], vec![0, 1, 0]);
         let mut profile = Profile::new("test".to_string());
-        let mut tracker = ButtonTracker::new();
-        tracker.update(&[0, 1, 0]);
+        let tracker = Arc::new(Mutex::new(ButtonTracker::new()));
+        {
+            let mut tracker_guard = tracker.lock().unwrap();
+            tracker_guard.update(&[0, 1, 0]);
+        }
 
         profile.enable_button = Some(1);
-        assert!(is_enabled(&joy, &profile, &tracker)); // Button 1 is pressed
+        {
+            let tracker_guard = tracker.lock().unwrap();
+            assert!(is_enabled(&profile, &tracker_guard)); // Button 1 is pressed
+        }
 
         profile.enable_button = Some(0);
-        assert!(!is_enabled(&joy, &profile, &tracker)); // Button 0 is not pressed
+        {
+            let tracker_guard = tracker.lock().unwrap();
+            assert!(!is_enabled(&profile, &tracker_guard)); // Button 0 is not pressed
+        }
 
         profile.enable_button = Some(5);
-        assert!(!is_enabled(&joy, &profile, &tracker)); // Button 5 doesn't exist
+        {
+            let tracker_guard = tracker.lock().unwrap();
+            assert!(!is_enabled(&profile, &tracker_guard)); // Button 5 doesn't exist
+        }
     }
     
     #[test]
     fn test_is_enabled_multiple_buttons() {
-        let joy = create_test_joy(vec![], vec![0, 0, 1, 0]);
+        let _joy = create_test_joy(vec![], vec![0, 0, 1, 0]);
         let mut profile = Profile::new("test".to_string());
-        let mut tracker = ButtonTracker::new();
-        tracker.update(&[0, 0, 1, 0]);
+        let tracker = Arc::new(Mutex::new(ButtonTracker::new()));
+        {
+            let mut tracker_guard = tracker.lock().unwrap();
+            tracker_guard.update(&[0, 0, 1, 0]);
+        }
 
         // Test multiple enable buttons (OR logic)
         profile.enable_buttons = Some(vec![0, 1, 2]);
-        assert!(is_enabled(&joy, &profile, &tracker)); // Button 2 is pressed
+        {
+            let tracker_guard = tracker.lock().unwrap();
+            assert!(is_enabled(&profile, &tracker_guard)); // Button 2 is pressed
+        }
 
         profile.enable_buttons = Some(vec![0, 1]);
-        assert!(!is_enabled(&joy, &profile, &tracker)); // Neither 0 nor 1 pressed
+        {
+            let tracker_guard = tracker.lock().unwrap();
+            assert!(!is_enabled(&profile, &tracker_guard)); // Neither 0 nor 1 pressed
+        }
     }
     
     #[test]
@@ -626,17 +636,23 @@ mod tests {
     
     #[test]
     fn test_is_enabled_both_single_and_multiple() {
-        let joy = create_test_joy(vec![], vec![1, 0, 1, 0]);
+        let _joy = create_test_joy(vec![], vec![1, 0, 1, 0]);
         let mut profile = Profile::new("test".to_string());
-        let mut tracker = ButtonTracker::new();
-        tracker.update(&[1, 0, 1, 0]);
+        let tracker = Arc::new(Mutex::new(ButtonTracker::new()));
+        {
+            let mut tracker_guard = tracker.lock().unwrap();
+            tracker_guard.update(&[1, 0, 1, 0]);
+        }
 
         // Test when both single and multiple buttons are configured
         profile.enable_button = Some(1); // Not pressed
         profile.enable_buttons = Some(vec![2, 3]); // Button 2 is pressed
         
         // Should be enabled because button 2 is pressed (OR logic between single and multiple)
-        assert!(is_enabled(&joy, &profile, &tracker));
+        {
+            let tracker_guard = tracker.lock().unwrap();
+            assert!(is_enabled(&profile, &tracker_guard));
+        }
     }
     
     #[test]
