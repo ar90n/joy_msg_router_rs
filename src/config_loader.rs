@@ -32,6 +32,10 @@ pub struct ProfileConfig {
     /// Button mappings
     #[serde(default)]
     pub button_mappings: Vec<ButtonMappingConfig>,
+    
+    /// Macro definitions available in this profile
+    #[serde(default)]
+    pub macros: std::collections::HashMap<String, crate::config::MacroDefinition>,
 }
 
 /// Axis mapping configuration
@@ -213,6 +217,9 @@ impl ProfileConfig {
                 action,
             });
         }
+        
+        // Copy macros
+        profile.macros = self.macros.clone();
         
         profile
     }

@@ -23,6 +23,10 @@ pub struct Profile {
     /// Timer configuration for periodic actions
     #[serde(default)]
     pub timer_config: TimerConfig,
+    
+    /// Macro definitions available in this profile
+    #[serde(default)]
+    pub macros: std::collections::HashMap<String, MacroDefinition>,
 }
 
 /// Timer configuration for periodic command execution
@@ -199,12 +203,88 @@ pub enum ActionType {
         once: bool,
     },
     
+    /// Execute a sequence of actions
+    ActionSequence {
+        /// List of actions to execute in sequence
+        actions: Vec<SequenceStep>,
+        /// Whether to execute only once (true) or continuously while pressed (false)
+        #[serde(default)]
+        once: bool,
+        /// Whether to repeat the sequence (only valid if once=false)
+        #[serde(default)]
+        repeat: bool,
+    },
+    
+    /// Execute a predefined macro
+    ExecuteMacro {
+        /// Name of the macro to execute
+        macro_name: String,
+        /// Parameters to pass to the macro
+        #[serde(default)]
+        parameters: std::collections::HashMap<String, MacroParameter>,
+        /// Whether to execute only once (true) or continuously while pressed (false)
+        #[serde(default)]
+        once: bool,
+    },
+    
     /// No action (stop)
     NoAction,
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// A step in an action sequence
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SequenceStep {
+    /// The action to execute
+    pub action: ActionType,
+    /// Delay before executing this step (in milliseconds)
+    #[serde(default)]
+    pub delay_ms: u64,
+    /// Duration to hold this action (in milliseconds, 0 means instantaneous)
+    #[serde(default)]
+    pub duration_ms: u64,
+}
+
+/// Parameter value for macros
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MacroParameter {
+    String(String),
+    Number(f64),
+    Boolean(bool),
+    Array(Vec<MacroParameter>),
+}
+
+/// A macro definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MacroDefinition {
+    /// Name of the macro
+    pub name: String,
+    /// Description of what the macro does
+    #[serde(default)]
+    pub description: String,
+    /// Parameter definitions
+    #[serde(default)]
+    pub parameters: std::collections::HashMap<String, MacroParameterDef>,
+    /// Sequence of actions to execute
+    pub actions: Vec<SequenceStep>,
+}
+
+/// Definition of a macro parameter
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MacroParameterDef {
+    /// Parameter type
+    #[serde(rename = "type")]
+    pub param_type: String,
+    /// Default value
+    #[serde(default)]
+    pub default: Option<MacroParameter>,
+    /// Description of the parameter
+    #[serde(default)]
+    pub description: String,
 }
 
 impl Profile {
@@ -217,6 +297,7 @@ impl Profile {
             axis_mappings: Vec::new(),
             button_mappings: Vec::new(),
             timer_config: TimerConfig::default(),
+            macros: std::collections::HashMap::new(),
         }
     }
     

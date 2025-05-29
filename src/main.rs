@@ -14,11 +14,15 @@ mod timer_callbacks;
 mod publishers;
 mod error;
 mod logging;
+mod sequence_executor;
 
 #[cfg(test)]
 mod test_multiple_message_types;
 
-use config::{OutputField, Profile, ActionType};
+#[cfg(test)]
+mod test_sequences_and_macros;
+
+use config::{OutputField, Profile, ActionType, SequenceStep, MacroDefinition};
 #[cfg(test)]
 use config::{ButtonMapping, AxisMapping};
 use config_loader::Configuration;
@@ -27,6 +31,7 @@ use command_queue::{CommandQueue, Command, Priority};
 use publishers::Publishers;
 use error::{JoyRouterError, JoyRouterResult, ErrorContext};
 use logging::{log_command_result};
+use sequence_executor::SequenceExecutor;
 
 /// Tracks enable button state changes
 struct EnableStateTracker {
@@ -186,6 +191,9 @@ fn main_impl() -> JoyRouterResult<()> {
     let command_queue = Arc::new(CommandQueue::new());
     let queue_sender = command_queue.get_sender();
     
+    // Create sequence executor for managing action sequences and macros
+    let sequence_executor = Arc::new(SequenceExecutor::new(Arc::clone(&command_queue)));
+    
     // Store the last received joy axes
     let last_joy_axes = Arc::new(Mutex::new(Vec::<f32>::new()));
     
@@ -226,6 +234,7 @@ fn main_impl() -> JoyRouterResult<()> {
     let queue_sender_timer = queue_sender.clone();
     let profile_clone = profile.clone();
     let logger_timer = Logger::new("joy_msg_router_timer");
+    let sequence_executor_timer = Arc::clone(&sequence_executor);
     
     selector.add_wall_timer(
         "create_command",
@@ -516,6 +525,56 @@ fn main_impl() -> JoyRouterResult<()> {
                                 }
                             }
                         }
+                        ActionType::ActionSequence { actions, once, repeat } => {
+                            if *once {
+                                // One-shot sequence on button press
+                                if just_pressed {
+                                    let sequence_id = format!("btn_{}_{}", button_mapping.button, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+                                    if let Err(e) = sequence_executor_timer.start_sequence(actions.clone(), false, sequence_id) {
+                                        pr_warn!(logger_timer, "Failed to start sequence for button {}: {:?}", button_mapping.button, e);
+                                    } else {
+                                        pr_info!(logger_timer, "Button {} pressed - starting one-shot sequence with {} steps", button_mapping.button, actions.len());
+                                    }
+                                }
+                            } else if button_pressed {
+                                // Start sequence when button is pressed, stop when released
+                                if just_pressed {
+                                    let sequence_id = format!("btn_{}_{}", button_mapping.button, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+                                    if let Err(e) = sequence_executor_timer.start_sequence(actions.clone(), *repeat, sequence_id) {
+                                        pr_warn!(logger_timer, "Failed to start sequence for button {}: {:?}", button_mapping.button, e);
+                                    } else {
+                                        pr_info!(logger_timer, "Button {} pressed - starting continuous sequence with {} steps", button_mapping.button, actions.len());
+                                    }
+                                } else if just_released {
+                                    // Stop sequences when button is released
+                                    let _sequence_id = format!("btn_{}_", button_mapping.button);
+                                    if let Err(e) = sequence_executor_timer.stop_all_sequences() {
+                                        pr_warn!(logger_timer, "Failed to stop sequences for button {}: {:?}", button_mapping.button, e);
+                                    } else {
+                                        pr_info!(logger_timer, "Button {} released - stopping sequences", button_mapping.button);
+                                    }
+                                }
+                            }
+                        }
+                        ActionType::ExecuteMacro { macro_name, parameters, once } => {
+                            if *once {
+                                // One-shot macro execution on button press
+                                if just_pressed {
+                                    if let Some(macro_def) = profile_clone.macros.get(macro_name) {
+                                        if let Err(e) = sequence_executor_timer.execute_macro(macro_def, parameters) {
+                                            pr_warn!(logger_timer, "Failed to execute macro '{}' for button {}: {:?}", macro_name, button_mapping.button, e);
+                                        } else {
+                                            pr_info!(logger_timer, "Button {} pressed - executing macro '{}'", button_mapping.button, macro_name);
+                                        }
+                                    } else {
+                                        pr_warn!(logger_timer, "Macro '{}' not found for button {}", macro_name, button_mapping.button);
+                                    }
+                                }
+                            } else if button_pressed && just_pressed {
+                                // Continuous macro execution not supported yet
+                                pr_warn!(logger_timer, "Button {} - continuous macro execution not supported yet", button_mapping.button);
+                            }
+                        }
                         ActionType::NoAction => {
                             if just_pressed {
                                 pr_info!(logger_timer, "Button {} pressed - stop action", button_mapping.button);
@@ -578,12 +637,18 @@ fn main_impl() -> JoyRouterResult<()> {
     // Create a separate logger for the command processing loop
     let process_logger = Logger::new("joy_msg_router_cmd_processor");
     let publishers_for_processing = Arc::clone(&publishers);
+    let sequence_executor_processing = Arc::clone(&sequence_executor);
     
     // Spin the selector and process commands
     loop {
         // Wait for events with a timeout to allow command processing
         selector.wait_timeout(std::time::Duration::from_millis(10))
             .context("Selector wait failed")?;
+        
+        // Process running sequences
+        if let Err(e) = sequence_executor_processing.process_sequences() {
+            pr_warn!(process_logger, "Failed to process sequences: {:?}", e);
+        }
         
         // Process pending commands
         command_queue.process_pending(|cmd| {
