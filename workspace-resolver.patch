@@ -1,9 +1,0 @@
-# Apply this patch to the parent workspace Cargo.toml
-# to fix the resolver warning:
-
---- a/src/Cargo.toml
-+++ b/src/Cargo.toml
-@@ -1,2 +1,3 @@
- [workspace]
- members = ["joy_msg_router_rs"]
-+resolver = "2"

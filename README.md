@@ -1,8 +1,7 @@
 # joy_msg_router_rs
 
-[![CI](https://github.com/USERNAME/joy_msg_router_rs/workflows/CI/badge.svg)](https://github.com/USERNAME/joy_msg_router_rs/actions/workflows/ci.yml)
-[![ROS2 Tests](https://github.com/USERNAME/joy_msg_router_rs/workflows/ROS2%20Tests/badge.svg)](https://github.com/USERNAME/joy_msg_router_rs/actions/workflows/ros2-test.yml)
-[![Coverage](https://github.com/USERNAME/joy_msg_router_rs/workflows/Coverage/badge.svg)](https://github.com/USERNAME/joy_msg_router_rs/actions/workflows/coverage.yml)
+[![CI](https://github.com/ar90n/joy_msg_router_rs/workflows/CI/badge.svg)](https://github.com/ar90n/joy_msg_router_rs/actions/workflows/ci.yml)
+[![Code Coverage](https://github.com/ar90n/joy_msg_router_rs/workflows/Code%20Coverage/badge.svg)](https://github.com/ar90n/joy_msg_router_rs/actions/workflows/coverage.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![ROS](https://img.shields.io/badge/ROS-Humble-blue)](https://docs.ros.org/en/humble/)
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange)](https://www.rust-lang.org/)
