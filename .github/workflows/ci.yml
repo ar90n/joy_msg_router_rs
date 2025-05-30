@@ -10,8 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: Build and Test
+  build-and-lint:
+    name: Build, Lint and Test
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
@@ -48,46 +48,6 @@ jobs:
         source /opt/ros/humble/setup.bash
         colcon build --packages-select joy_msg_router_rs
         
-    - name: Run tests
-      run: |
-        cd ~/ws
-        source /opt/ros/humble/setup.bash
-        source install/setup.bash
-        colcon test --packages-select joy_msg_router_rs
-        colcon test-result --verbose
-        
-  lint:
-    name: Lint
-    runs-on: ubuntu-22.04
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup ROS 2 Humble
-      uses: ros-tooling/setup-ros@v0.7
-      with:
-        required-ros-distributions: humble
-    
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-colcon-common-extensions
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
-        
-    - name: Install cargo-ament-build
-      run: cargo install cargo-ament-build
-    
-    - name: Create workspace and build for message generation
-      run: |
-        mkdir -p ~/ws/src
-        ln -s $GITHUB_WORKSPACE ~/ws/src/
-        cd ~/ws
-        source /opt/ros/humble/setup.bash
-        colcon build --packages-select joy_msg_router_rs
-        
     - name: Format check
       run: |
         cd ~/ws/src/joy_msg_router_rs
@@ -99,3 +59,11 @@ jobs:
         cd ~/ws/src/joy_msg_router_rs
         source /opt/ros/humble/setup.bash
         cargo clippy -- -D warnings
+        
+    - name: Run tests
+      run: |
+        cd ~/ws
+        source /opt/ros/humble/setup.bash
+        source install/setup.bash
+        colcon test --packages-select joy_msg_router_rs
+        colcon test-result --verbose
