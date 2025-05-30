@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  ROS_DISTRO: humble
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    
+    - name: Check formatting
+      run: cargo fmt -- --check
+    
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Run tests
+      run: cargo test --verbose
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    container:
+      image: ros:humble
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          python3-colcon-common-extensions \
+          python3-pip \
+          curl \
+          build-essential
+    
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Setup ROS environment
+      run: |
+        source /opt/ros/$ROS_DISTRO/setup.bash
+        echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> $GITHUB_ENV
+    
+    - name: Install cargo-ament-build
+      run: |
+        cd tools/cargo-ament-build
+        $HOME/.cargo/bin/cargo install --path .
+    
+    - name: Create workspace
+      run: |
+        mkdir -p ws/src
+        cd ws/src
+        ln -s $GITHUB_WORKSPACE .
+    
+    - name: Build with colcon
+      run: |
+        cd ws
+        source /opt/ros/$ROS_DISTRO/setup.bash
+        colcon build --packages-select joy_msg_router_rs
+    
+    - name: Run colcon tests
+      run: |
+        cd ws
+        source /opt/ros/$ROS_DISTRO/setup.bash
+        colcon test --packages-select joy_msg_router_rs
+        colcon test-result --verbose
+
+  build-multi-platform:
+    name: Build - ${{ matrix.ros_distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ros_distro: [humble, iron, rolling]
+    container:
+      image: ros:${{ matrix.ros_distro }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          python3-colcon-common-extensions \
+          python3-pip \
+          curl \
+          build-essential
+    
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Setup ROS environment
+      run: |
+        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        echo "source /opt/ros/${{ matrix.ros_distro }}/setup.bash" >> $GITHUB_ENV
+    
+    - name: Install cargo-ament-build
+      run: |
+        cd tools/cargo-ament-build
+        $HOME/.cargo/bin/cargo install --path .
+    
+    - name: Create workspace
+      run: |
+        mkdir -p ws/src
+        cd ws/src
+        ln -s $GITHUB_WORKSPACE .
+    
+    - name: Build with colcon
+      run: |
+        cd ws
+        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        colcon build --packages-select joy_msg_router_rs

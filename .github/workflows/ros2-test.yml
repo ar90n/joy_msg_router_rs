@@ -1,0 +1,73 @@
+name: ROS2 Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test-ros2:
+    name: ROS2 Tests - ${{ matrix.ros_distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ros_distro: [humble, iron]
+    container:
+      image: ros:${{ matrix.ros_distro }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          python3-colcon-common-extensions \
+          python3-pip \
+          python3-pytest \
+          python3-pytest-cov \
+          curl \
+          build-essential \
+          ros-${{ matrix.ros_distro }}-joy
+    
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Setup ROS environment
+      run: |
+        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        echo "source /opt/ros/${{ matrix.ros_distro }}/setup.bash" >> $GITHUB_ENV
+    
+    - name: Install cargo-ament-build
+      run: |
+        cd tools/cargo-ament-build
+        $HOME/.cargo/bin/cargo install --path .
+    
+    - name: Create workspace
+      run: |
+        mkdir -p ws/src
+        cd ws/src
+        ln -s $GITHUB_WORKSPACE .
+    
+    - name: Build package
+      run: |
+        cd ws
+        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        colcon build --packages-select joy_msg_router_rs
+    
+    - name: Run tests
+      run: |
+        cd ws
+        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        source install/setup.bash
+        colcon test --packages-select joy_msg_router_rs --pytest-args -v
+        colcon test-result --verbose
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results-${{ matrix.ros_distro }}
+        path: ws/build/joy_msg_router_rs/test_results

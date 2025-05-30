@@ -24,12 +24,6 @@ def generate_launch_description():
         description='Joystick device file'
     )
     
-    profile_arg = DeclareLaunchArgument(
-        'profile',
-        default_value='teleop',
-        description='Joy router profile to use (teleop, teleop_safe, holonomic, drone)'
-    )
-    
     namespace_arg = DeclareLaunchArgument(
         'namespace',
         default_value='',
@@ -54,20 +48,19 @@ def generate_launch_description():
         description='Rate for auto-repeating joystick messages (Hz)'
     )
     
+    param_file_arg = DeclareLaunchArgument(
+        'param_file',
+        default_value='',
+        description='Path to ROS parameter file (YAML) for joy_msg_router. If empty, parameters must be set separately.'
+    )
+    
     # Get launch configurations
     device = LaunchConfiguration('device')
-    profile = LaunchConfiguration('profile')
     namespace = LaunchConfiguration('namespace')
     cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
     deadzone = LaunchConfiguration('deadzone')
     autorepeat_rate = LaunchConfiguration('autorepeat_rate')
-    
-    # Path to default config file
-    config_file = PathJoinSubstitution([
-        FindPackageShare('joy_msg_router_rs'),
-        'config',
-        'default.yaml'
-    ])
+    param_file = LaunchConfiguration('param_file')
     
     # Joy node for reading joystick input
     joy_node = Node(
@@ -87,7 +80,7 @@ def generate_launch_description():
         package='joy_msg_router_rs',
         executable='joy_msg_router',
         name='joy_msg_router',
-        arguments=['--config', config_file, '--profile', profile],
+        parameters=[param_file] if param_file else [],
         remappings=[
             ('cmd_vel', cmd_vel_topic),
         ],
@@ -107,7 +100,6 @@ def generate_launch_description():
     launch_info = LogInfo(
         msg=[
             'Starting teleoperation with device: ', device,
-            ', profile: ', profile,
             ', namespace: ', namespace,
             ', cmd_vel topic: ', cmd_vel_topic
         ]
@@ -116,11 +108,11 @@ def generate_launch_description():
     return LaunchDescription([
         # Declare arguments
         device_arg,
-        profile_arg,
         namespace_arg,
         cmd_vel_topic_arg,
         deadzone_arg,
         autorepeat_rate_arg,
+        param_file_arg,
         
         # Log info
         launch_info,

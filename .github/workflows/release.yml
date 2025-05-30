@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+  ROS_DISTRO: humble
+
+jobs:
+  build-deb-packages:
+    name: Build DEB - ROS ${{ matrix.ros_distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ros_distro: [humble, iron]
+        include:
+          - ros_distro: humble
+            ubuntu_distro: jammy
+          - ros_distro: iron
+            ubuntu_distro: jammy
+    container:
+      image: ros:${{ matrix.ros_distro }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          python3-colcon-common-extensions \
+          python3-pip \
+          curl \
+          build-essential \
+          debhelper \
+          dpkg-dev \
+          python3-bloom \
+          fakeroot
+    
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Setup ROS environment
+      run: |
+        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        echo "source /opt/ros/${{ matrix.ros_distro }}/setup.bash" >> $GITHUB_ENV
+    
+    - name: Install cargo-ament-build
+      run: |
+        cd tools/cargo-ament-build
+        $HOME/.cargo/bin/cargo install --path .
+    
+    - name: Get version
+      id: get_version
+      run: |
+        VERSION=${{ github.event.release.tag_name }}
+        VERSION=${VERSION#v}
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "DEB_VERSION=${VERSION}-0${MATRIX_ROS_DISTRO}0" >> $GITHUB_OUTPUT
+      env:
+        MATRIX_ROS_DISTRO: ${{ matrix.ros_distro }}
+    
+    - name: Build debian package
+      run: |
+        # Create workspace
+        mkdir -p ws/src
+        cd ws/src
+        ln -s $GITHUB_WORKSPACE .
+        cd ..
+        
+        # Build
+        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        colcon build --packages-select joy_msg_router_rs
+        
+        # Create debian structure
+        cd $GITHUB_WORKSPACE
+        mkdir -p debian/DEBIAN
+        mkdir -p debian/opt/ros/${{ matrix.ros_distro }}
+        
+        # Copy built files
+        cp -r ws/install/joy_msg_router_rs/* debian/opt/ros/${{ matrix.ros_distro }}/
+        
+        # Create control file
+        cat > debian/DEBIAN/control << EOF
+        Package: ros-${{ matrix.ros_distro }}-joy-msg-router-rs
+        Version: ${{ steps.get_version.outputs.DEB_VERSION }}
+        Section: misc
+        Priority: optional
+        Architecture: amd64
+        Depends: ros-${{ matrix.ros_distro }}-ros-base, ros-${{ matrix.ros_distro }}-joy
+        Maintainer: Your Name <your.email@example.com>
+        Description: ROS2 Joy Message Router
+         A ROS2 node written in Rust that routes joystick messages to robot control commands.
+        EOF
+        
+        # Build package
+        dpkg-deb --build debian
+        mv debian.deb joy-msg-router-rs_${{ steps.get_version.outputs.VERSION }}_${{ matrix.ros_distro }}_amd64.deb
+    
+    - name: Upload DEB package
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./joy-msg-router-rs_${{ steps.get_version.outputs.VERSION }}_${{ matrix.ros_distro }}_amd64.deb
+        asset_name: joy-msg-router-rs_${{ steps.get_version.outputs.VERSION }}_${{ matrix.ros_distro }}_amd64.deb
+        asset_content_type: application/vnd.debian.binary-package
+
+  build-binaries:
+    name: Build Binary - ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: joy_msg_router
+            asset_name: joy_msg_router-x86_64-linux
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: joy_msg_router
+            asset_name: joy_msg_router-aarch64-linux
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+    
+    - name: Install cross-compilation tools
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu
+    
+    - name: Build
+      run: |
+        cargo build --release --target ${{ matrix.target }}
+    
+    - name: Upload binary
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        asset_name: ${{ matrix.asset_name }}
+        asset_content_type: application/octet-stream

@@ -1,47 +1,31 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
-/// Represents a configuration profile for joy message routing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
-    /// Name of the profile
     pub name: String,
-
-    /// Optional button index that must be pressed to enable output
     pub enable_button: Option<usize>,
-
-    /// Input mappings (both axes and buttons)
     pub input_mappings: Vec<InputMapping>,
 }
 
-/// Type of input source
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InputSource {
-    /// Axis input (continuous value)
     Axis(usize),
-    /// Button input (discrete on/off)
     Button(usize),
 }
 
-/// Represents a mapping from an input to an action
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputMapping {
-    /// Input source (axis or button)
     pub source: InputSource,
-    
-    /// Action to perform
     pub action: ActionType,
-    
-    /// Scale factor for axis values (ignored for buttons)
+
     #[serde(default = "default_scale")]
     pub scale: f64,
-    
-    /// Offset to add after scaling (ignored for buttons)
+
     #[serde(default)]
     pub offset: f64,
-    
-    /// Deadzone threshold for axes (ignored for buttons)
+
     #[serde(default = "default_deadzone")]
     pub deadzone: f64,
 }
@@ -54,19 +38,13 @@ fn default_deadzone() -> f64 {
     0.1
 }
 
-
-/// Enum representing different action types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ActionType {
-    /// Publish to a Twist field
     PublishTwistField {
-        /// Which field to publish to ("linear_x", "linear_y", "linear_z", "angular_x", "angular_y", "angular_z")
-        field: String,
+        field: String, // "linear_x", "linear_y", "linear_z", "angular_x", "angular_y", "angular_z"
     },
 
-
-    /// Publish a Bool message
     PublishBool {
         topic: String,
         value: bool,
@@ -75,7 +53,6 @@ pub enum ActionType {
         once: bool,
     },
 
-    /// Publish an Int32 message
     PublishInt32 {
         topic: String,
         value: i32,
@@ -84,7 +61,6 @@ pub enum ActionType {
         once: bool,
     },
 
-    /// Publish a Float64 message
     PublishFloat64 {
         topic: String,
         value: f64,
@@ -93,7 +69,6 @@ pub enum ActionType {
         once: bool,
     },
 
-    /// Publish a String message
     PublishString {
         topic: String,
         value: String,
@@ -102,7 +77,6 @@ pub enum ActionType {
         once: bool,
     },
 
-    /// Call a service
     CallService {
         service_name: String,
         service_type: String,
@@ -114,7 +88,6 @@ fn default_true() -> bool {
 }
 
 impl Profile {
-    /// Creates a new empty profile
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -123,7 +96,6 @@ impl Profile {
         }
     }
 
-    /// Validates the profile configuration
     pub fn validate(&self) -> Result<()> {
         // Check for duplicate input sources
         let mut used_sources = std::collections::HashSet::new();
@@ -132,12 +104,9 @@ impl Profile {
                 InputSource::Axis(idx) => format!("axis_{}", idx),
                 InputSource::Button(idx) => format!("button_{}", idx),
             };
-            
+
             if !used_sources.insert(source_key.clone()) {
-                return Err(anyhow!(format!(
-                    "Duplicate mapping for {}",
-                    source_key
-                )));
+                return Err(anyhow!(format!("Duplicate mapping for {}", source_key)));
             }
         }
 
@@ -151,10 +120,7 @@ impl Profile {
                     )));
                 }
                 if mapping.scale == 0.0 {
-                    return Err(anyhow!(format!(
-                        "Zero scale for {:?}",
-                        mapping.source
-                    )));
+                    return Err(anyhow!(format!("Zero scale for {:?}", mapping.source)));
                 }
             }
         }
@@ -174,12 +140,24 @@ impl InputMapping {
                 }
             }
             InputSource::Button(_) => {
-                if value > 0.5 { 1.0 } else { 0.0 }
+                if value > 0.5 {
+                    1.0 * self.scale + self.offset
+                } else {
+                    0.0
+                }
             }
         }
     }
+    
+    #[cfg(test)]
+    pub fn process_input(&self, tracker: &crate::joy_msg_tracker::JoyMsgTracker) -> f64 {
+        let raw_value = match self.source {
+            InputSource::Axis(idx) => tracker.get_axis(idx).unwrap_or(0.0) as f64,
+            InputSource::Button(idx) => if tracker.is_pressed(idx) { 1.0 } else { 0.0 },
+        };
+        self.process_value(raw_value)
+    }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -217,9 +195,9 @@ mod tests {
         };
 
         assert_eq!(mapping.process_value(0.0), 0.0);
-        assert_eq!(mapping.process_value(1.0), 1.0);
+        assert_eq!(mapping.process_value(1.0), 1.0 * 2.0 + 0.5); // scale and offset applied
         assert_eq!(mapping.process_value(0.3), 0.0);
-        assert_eq!(mapping.process_value(0.7), 1.0);
+        assert_eq!(mapping.process_value(0.7), 1.0 * 2.0 + 0.5); // scale and offset applied
     }
 
     #[test]
@@ -235,7 +213,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.1,
         });
-        
+
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
             action: ActionType::PublishTwistField {

@@ -1,16 +1,23 @@
 # joy_msg_router_rs
 
+[![CI](https://github.com/your-username/joy_msg_router_rs/workflows/CI/badge.svg)](https://github.com/your-username/joy_msg_router_rs/actions/workflows/ci.yml)
+[![ROS2 Tests](https://github.com/your-username/joy_msg_router_rs/workflows/ROS2%20Integration%20Tests/badge.svg)](https://github.com/your-username/joy_msg_router_rs/actions/workflows/ros2-test.yml)
+[![codecov](https://codecov.io/gh/your-username/joy_msg_router_rs/branch/main/graph/badge.svg)](https://codecov.io/gh/your-username/joy_msg_router_rs)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![ROS](https://img.shields.io/badge/ROS-Humble-blue)](https://docs.ros.org/en/humble/)
+[![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange)](https://www.rust-lang.org/)
+
 A ROS2 node written in Rust that routes joystick messages to robot control commands. This package provides flexible, configurable mapping from joystick inputs to robot movement commands with safety features like enable buttons and deadzone filtering.
 
 ## Features
 
 - **🎮 Joystick Input Processing**: Subscribes to `sensor_msgs/Joy` messages
 - **🚀 Twist Output**: Publishes `geometry_msgs/Twist` commands
-- **⚙️ Configurable Profiles**: YAML-based configuration for different robot types
+- **⚙️ ROS Parameter Configuration**: Configure via ROS2 parameter system
 - **🛡️ Safety Features**: Enable button support and deadzone filtering
-- **🔲 Button Actions**: Trigger fixed movements or service calls with button presses
-- **📦 Multiple Profiles**: Pre-configured profiles for teleop, holonomic, and drone control
-- **🧪 Comprehensive Testing**: Unit tests and integration tests included
+- **🔄 Unified Input Handling**: Both axes and buttons can trigger any action
+- **📦 Multiple Message Types**: Twist fields, boolean messages, and service calls
+- **🧪 Comprehensive Testing**: Unit tests included
 - **🚀 Launch Files**: Easy deployment with ROS2 launch system
 
 ## Quick Start
@@ -34,90 +41,93 @@ source install/setup.bash
 
 #### Option 1: Complete Teleoperation Setup
 ```bash
-# Launches both joy node and joy_msg_router
-ros2 launch joy_msg_router_rs joy_teleop.launch.py
+# Launches both joy node and joy_msg_router with parameter file
+ros2 launch joy_msg_router_rs joy_teleop.launch.py param_file:=/path/to/params.yaml
 ```
 
 #### Option 2: Joy Router Only
 ```bash
 # If you already have a joy node running
-ros2 launch joy_msg_router_rs joy_router.launch.py
+ros2 launch joy_msg_router_rs joy_router.launch.py param_file:=/path/to/params.yaml
 ```
 
 #### Option 3: Direct Node Execution
 ```bash
-# Run with default hardcoded configuration
-ros2 run joy_msg_router_rs joy_msg_router
+# Run with parameter file
+ros2 run joy_msg_router_rs joy_msg_router --ros-args --params-file /path/to/params.yaml
+
+# Or set parameters individually
+ros2 run joy_msg_router_rs joy_msg_router --ros-args \
+  -p profile_name:=teleop_safe \
+  -p enable_button:=4 \
+  -p input_mappings.0.source_type:=axis \
+  -p input_mappings.0.source_index:=1 \
+  -p input_mappings.0.action_type:=publish_twist_field \
+  -p input_mappings.0.field:=linear_x \
+  -p input_mappings.0.scale:=0.5
 ```
 
 ## Configuration
 
-### Available Profiles
+The node uses ROS2 parameters for configuration. See `config/params_example.yaml` for a complete example.
 
-The package includes several pre-configured profiles:
-
-- **`teleop`**: Basic differential drive robot (default)
-- **`teleop_safe`**: Same as teleop but requires enable button (L1)
-- **`holonomic`**: For omnidirectional robots with strafe capability
-- **`drone`**: For UAV/drone control with 3D movement
-
-### Using Different Profiles
-
-```bash
-# Safe teleoperation with deadman switch
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=teleop_safe
-
-# Holonomic robot control
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=holonomic
-
-# Drone/UAV control
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=drone
-```
-
-### Custom Configuration
-
-Create your own configuration file based on `config/default.yaml`:
-
-```bash
-# Use custom config file
-ros2 launch joy_msg_router_rs joy_router.launch.py \
-  config_file:=/path/to/my_config.yaml \
-  profile:=my_custom_profile
-```
-
-## Configuration Format
-
-The configuration uses YAML format with the following structure:
+### Parameter Structure
 
 ```yaml
-default_profile: "teleop"
-profiles:
-  my_profile:
-    # Optional: Enable button (joystick button that must be held)
-    enable_button: 4  # L1 button
+joy_msg_router:
+  ros__parameters:
+    # Profile name (for identification)
+    profile_name: "teleop_safe"
     
-    # Axis mappings: joystick axes to robot movement
-    axis_mappings:
-      - joy_axis: 1              # Left stick Y-axis
-        output_field: linear_x   # Forward/backward movement
-        scale: 0.5               # Maximum speed (m/s)
-        offset: 0.0              # Offset after scaling
-        deadzone: 0.1            # Values below this are ignored
+    # Optional: Enable button that must be held
+    enable_button: 4  # L1/LB button
     
-    # Button mappings: buttons to discrete actions
-    button_mappings:
-      - button: 0
-        action:
-          type: publish_twist    # Publish fixed Twist message
-          linear_x: 0.0
-          angular_z: 0.0
-      
-      - button: 1
-        action:
-          type: call_service     # Call ROS service (planned feature)
-          service_name: "/emergency_stop"
-          service_type: "std_srvs/srv/Trigger"
+    # Input mappings (unified for axes and buttons)
+    # Format: input_mappings.N.parameter_name
+    
+    # Example axis mapping
+    input_mappings.0.source_type: "axis"
+    input_mappings.0.source_index: 1
+    input_mappings.0.action_type: "publish_twist_field"
+    input_mappings.0.field: "linear_x"
+    input_mappings.0.scale: 0.5
+    input_mappings.0.offset: 0.0
+    input_mappings.0.deadzone: 0.1
+    
+    # Example button mapping
+    input_mappings.1.source_type: "button"
+    input_mappings.1.source_index: 0
+    input_mappings.1.action_type: "publish_bool"
+    input_mappings.1.topic: "/lights/enable"
+    input_mappings.1.value: true
+    input_mappings.1.once: true
 ```
+
+### Supported Action Types
+
+1. **publish_twist_field**: Publish to a specific field of the Twist message
+   - `field`: One of "linear_x", "linear_y", "linear_z", "angular_x", "angular_y", "angular_z"
+   - Works with both axes (scaled values) and buttons (fixed values)
+
+2. **publish_bool**: Publish boolean messages
+   - `topic`: Target topic name
+   - `value`: Boolean value to publish
+   - `once`: If true, publish only on activation; if false, publish continuously while active
+
+3. **call_service**: Call a ROS service
+   - `service_name`: Name of the service to call
+   - `service_type`: Service type (e.g., "std_srvs/srv/Trigger")
+
+### Input Processing
+
+- **Axes**: Analog inputs with deadzone, scaling, and offset
+  - `scale`: Multiplier for the raw value
+  - `offset`: Added after scaling
+  - `deadzone`: Values below this threshold are treated as zero
+
+- **Buttons**: Digital inputs that can trigger any action
+  - For twist fields: Uses scale/offset to set fixed values
+  - For bool/service: Triggers on press or continuously
 
 ## Topics
 
@@ -125,186 +135,45 @@ profiles:
 |-------|------|-------------|
 | `/joy` | `sensor_msgs/Joy` | Input joystick messages |
 | `/cmd_vel` | `geometry_msgs/Twist` | Output velocity commands |
+| Custom topics | `std_msgs/Bool` | As configured in publish_bool actions |
 
-## Parameters
+## Example Configurations
 
-The node supports configuration through multiple methods with the following priority:
+### PlayStation 4 Controller
+See `config/examples/ps4_controller.yaml`
 
-1. **Command line arguments** (highest priority)
-2. **Environment variables**  
-3. **Default values** (lowest priority)
+### Xbox Controller  
+See `config/examples/xbox_controller.yaml`
 
-### Command Line Arguments
-```bash
-ros2 run joy_msg_router_rs joy_msg_router --config /path/to/config.yaml --profile drone
-```
-
-### Environment Variables
-```bash
-export JOY_ROUTER_CONFIG_FILE=/path/to/config.yaml
-export JOY_ROUTER_PROFILE=holonomic
-ros2 run joy_msg_router_rs joy_msg_router
-```
-
-### Available Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `--config` | string | "config/default.yaml" | Path to configuration file |
-| `--profile` | string | "teleop" | Profile to use from config |
-| `JOY_ROUTER_CONFIG_FILE` | env var | - | Environment variable for config file |
-| `JOY_ROUTER_PROFILE` | env var | - | Environment variable for profile |
-
-## Architecture
-
-The joy_msg_router node processes joystick input through several stages:
-
-1. **Joy Message Reception**: Subscribes to `/joy` topic
-2. **Button State Tracking**: Tracks button press/release events
-3. **Enable Button Check**: Verifies safety conditions
-4. **Button Action Processing**: Handles discrete button actions
-5. **Axis-to-Twist Conversion**: Maps joystick axes to robot movement
-6. **Twist Publishing**: Outputs velocity commands
+### Custom Parameter File
+See `config/params_example.yaml`
 
 ## Development
 
-### Building from Source
-
-```bash
-# Install dependencies
-sudo apt install ros-${ROS_DISTRO}-joy
-
-# Clone and build
-cd ~/ros2_ws/src
-git clone <repository-url> joy_msg_router_rs
-cd ~/ros2_ws
-colcon build --packages-select joy_msg_router_rs
-```
-
 ### Running Tests
-
 ```bash
-# Unit tests (Rust)
-cd src/joy_msg_router_rs
+# Rust unit tests
+cd ~/ros2_ws/src/joy_msg_router_rs
 cargo test
 
-# Integration tests (Python)
-source install/setup.bash
-python3 src/joy_msg_router_rs/tests/test_simple.py
-
-# All tests via colcon
+# ROS2 integration tests
+cd ~/ros2_ws
 colcon test --packages-select joy_msg_router_rs
 ```
 
-### Code Structure
-
-```
-src/joy_msg_router_rs/
-├── src/
-│   ├── main.rs              # Main node implementation
-│   ├── config.rs            # Configuration data structures  
-│   ├── config_loader.rs     # YAML configuration loading
-│   └── button_tracker.rs    # Button state management
-├── config/
-│   └── default.yaml         # Default configuration profiles
-├── launch/
-│   ├── joy_router.launch.py # Joy router only
-│   └── joy_teleop.launch.py # Complete teleoperation setup
-└── tests/
-    ├── test_simple.py       # Basic functionality tests
-    ├── test_integration.py  # Launch-based integration tests
-    └── test_joy_router.py   # Comprehensive node tests
-```
-
-## Troubleshooting
-
-### Joystick Not Working
+### Code Quality
 ```bash
-# Check joystick device
-ls /dev/input/js*
-jstest /dev/input/js0
+# Format code
+cargo fmt
 
-# Set permissions
-sudo chmod 666 /dev/input/js0
+# Run linter
+cargo clippy -- -D warnings
 ```
-
-### No cmd_vel Output
-```bash
-# Check if enable button is required and pressed
-ros2 topic echo /joy
-
-# Verify deadzone settings
-ros2 param get /joy_msg_router profile
-
-# Monitor output
-ros2 topic echo /cmd_vel
-```
-
-### Custom Configuration Issues
-```bash
-# Validate YAML syntax
-python3 -c "import yaml; yaml.safe_load(open('config.yaml'))"
-
-# Check node logs
-ros2 run joy_msg_router_rs joy_msg_router --ros-args --log-level debug
-```
-
-## Examples
-
-### Multi-Robot Setup
-```bash
-# Robot 1
-ros2 launch joy_msg_router_rs joy_teleop.launch.py \
-  namespace:=robot1 \
-  cmd_vel_topic:=/robot1/cmd_vel \
-  device:=/dev/input/js0
-
-# Robot 2
-ros2 launch joy_msg_router_rs joy_teleop.launch.py \
-  namespace:=robot2 \
-  cmd_vel_topic:=/robot2/cmd_vel \
-  device:=/dev/input/js1
-```
-
-### Custom Topic Names
-```bash
-ros2 launch joy_msg_router_rs joy_router.launch.py \
-  joy_topic:=/custom_joy \
-  cmd_vel_topic:=/robot/base/cmd_vel
-```
-
-### Parameter Configuration Examples
-```bash
-# Use command line arguments
-ros2 run joy_msg_router_rs joy_msg_router --profile drone --config /custom/config.yaml
-
-# Use environment variables
-export JOY_ROUTER_PROFILE=holonomic
-ros2 run joy_msg_router_rs joy_msg_router
-
-# Combine launch files with parameters
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=teleop_safe
-
-# Runtime profile switching (restart required)
-ros2 run joy_msg_router_rs joy_msg_router --profile teleop_safe
-# Kill and restart with different profile
-ros2 run joy_msg_router_rs joy_msg_router --profile drone
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass: `cargo test && python3 tests/test_simple.py`
-5. Submit a pull request
 
 ## License
 
-This project is licensed under the Apache License 2.0.
+Apache License 2.0
 
-## Acknowledgments
+## Contributing
 
-- Built with [safe_drive](https://github.com/tier4/safe_drive) - A safe Rust wrapper for ROS2
-- Inspired by the standard `joy_teleop` package
-- Part of the ROS2 ecosystem
+Contributions are welcome! Please feel free to submit a Pull Request.

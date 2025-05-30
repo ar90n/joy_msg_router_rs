@@ -33,55 +33,68 @@ profiles:
     # L1 button for safety
     enable_button: 4
     
-    axis_mappings:
+    input_mappings:
       # Forward/backward with left stick
-      - joy_axis: 1
-        output_field: linear_x
+      - source_type: axis
+        source_index: 1
         scale: -0.5       # Inverted because PS4 Y-axis is inverted
         offset: 0.0
         deadzone: 0.1
+        action:
+          type: publish_twist_field
+          field: linear_x
       
       # Rotation with right stick
-      - joy_axis: 2
-        output_field: angular_z
+      - source_type: axis
+        source_index: 2
         scale: -1.0       # Adjust sign based on preference
         offset: 0.0
         deadzone: 0.1
-    
-    button_mappings:
-      # Square button - full stop
-      - button: 0
         action:
-          type: publish_twist
-          linear_x: 0.0
-          linear_y: 0.0
-          linear_z: 0.0
-          angular_x: 0.0
-          angular_y: 0.0
-          angular_z: 0.0
+          type: publish_twist_field
+          field: angular_z
+    
+      # Square button - full stop
+      - source_type: button
+        source_index: 0
+        scale: 0.0        # Zero for full stop
+        offset: 0.0
+        deadzone: 0.0
+        action:
+          type: publish_twist_field
+          field: linear_x
 
   ps4_triggers:
     # Use triggers for forward/backward control
-    enable_button: -1
+    # No enable button (-1 means always enabled)
     
-    axis_mappings:
+    input_mappings:
       # R2 for forward (scale negative values to positive forward motion)
-      - joy_axis: 5
-        output_field: linear_x
+      - source_type: axis
+        source_index: 5
         scale: -0.5
         offset: 0.25      # Offset to handle trigger rest position
         deadzone: 0.2
+        action:
+          type: publish_twist_field
+          field: linear_x
       
       # L2 for backward (scale to negative motion)
-      - joy_axis: 3
-        output_field: linear_x
+      - source_type: axis
+        source_index: 3
         scale: 0.5
         offset: -0.25
         deadzone: 0.2
+        action:
+          type: publish_twist_field
+          field: linear_x
       
       # Right stick for steering
-      - joy_axis: 2
-        output_field: angular_z
+      - source_type: axis
+        source_index: 2
         scale: -1.0
         offset: 0.0
         deadzone: 0.1
+        action:
+          type: publish_twist_field
+          field: angular_z

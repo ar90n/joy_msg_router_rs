@@ -1,8 +1,8 @@
 use safe_drive::logger::Logger;
 use safe_drive::{pr_debug, pr_error, pr_info, pr_warn};
 
-/// Log levels for structured logging
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum LogLevel {
     Debug,
     Info,
@@ -10,14 +10,12 @@ pub enum LogLevel {
     Error,
 }
 
-/// Context information for structured logging
 pub struct LogContext<'a> {
     pub module: &'a str,
     pub function: &'a str,
     pub details: Option<&'a str>,
 }
 
-/// Log a message with context
 pub fn log_with_context(logger: &Logger, level: LogLevel, context: LogContext, message: &str) {
     let prefix = format!("[{}::{}]", context.module, context.function);
     let full_message = if let Some(details) = context.details {
@@ -34,7 +32,6 @@ pub fn log_with_context(logger: &Logger, level: LogLevel, context: LogContext, m
     }
 }
 
-/// Log an error with full context
 pub fn log_error(logger: &Logger, context: LogContext, error: &anyhow::Error) {
     log_with_context(logger, LogLevel::Error, context, &error.to_string());
 }
@@ -139,7 +136,7 @@ macro_rules! log_error_detail {
     };
 }
 
-/// Helper for logging command processing results
+#[allow(dead_code)]
 pub fn log_command_result(logger: &Logger, command: &str, result: anyhow::Result<()>) {
     match result {
         Ok(()) => log_with_context(

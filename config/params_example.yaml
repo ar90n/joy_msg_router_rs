@@ -1,0 +1,56 @@
+# ROS2 Parameter File for joy_msg_router
+# This file shows how to set parameters for the joy_msg_router node
+# Use with: ros2 run joy_msg_router_rs joy_msg_router --ros-args --params-file path/to/this/file.yaml
+
+joy_msg_router:
+  ros__parameters:
+    # Profile name
+    profile_name: "teleop_safe"
+    
+    # Enable button (optional) - button that must be held to enable movement
+    enable_button: 4  # L1/LB button
+    
+    # Input mappings - unified format for both axes and buttons
+    # Each mapping has format: input_mappings.N.parameter_name
+    
+    # Mapping 0: Forward/backward movement (left stick Y-axis)
+    input_mappings.0.source_type: "axis"
+    input_mappings.0.source_index: 1
+    input_mappings.0.action_type: "publish_twist_field"
+    input_mappings.0.field: "linear_x"
+    input_mappings.0.scale: 0.5
+    input_mappings.0.offset: 0.0
+    input_mappings.0.deadzone: 0.1
+    
+    # Mapping 1: Rotation (right stick X-axis)
+    input_mappings.1.source_type: "axis"
+    input_mappings.1.source_index: 3
+    input_mappings.1.action_type: "publish_twist_field"
+    input_mappings.1.field: "angular_z"
+    input_mappings.1.scale: 1.0
+    input_mappings.1.offset: 0.0
+    input_mappings.1.deadzone: 0.1
+    
+    # Mapping 2: Emergency stop (X/Square button)
+    input_mappings.2.source_type: "button"
+    input_mappings.2.source_index: 0
+    input_mappings.2.action_type: "publish_twist_field"
+    input_mappings.2.field: "linear_x"
+    input_mappings.2.scale: 0.0  # Zero output for stop
+    input_mappings.2.offset: 0.0
+    input_mappings.2.deadzone: 0.0
+    
+    # Mapping 3: Publish boolean (R1/RB button)
+    input_mappings.3.source_type: "button"
+    input_mappings.3.source_index: 5
+    input_mappings.3.action_type: "publish_bool"
+    input_mappings.3.topic: "/lights/enable"
+    input_mappings.3.value: true
+    input_mappings.3.once: true  # Publish only on press, not continuously
+    
+    # Mapping 4: Call service (Triangle/Y button)
+    input_mappings.4.source_type: "button"
+    input_mappings.4.source_index: 3
+    input_mappings.4.action_type: "call_service"
+    input_mappings.4.service_name: "/trigger_action"
+    input_mappings.4.service_type: "std_srvs/srv/Trigger"

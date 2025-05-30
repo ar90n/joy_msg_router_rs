@@ -1,9 +1,9 @@
+use anyhow::Result;
 use geometry_msgs::msg::Twist;
 use safe_drive::node::Node;
 use safe_drive::topic::publisher::Publisher;
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::Result;
 use std_msgs::msg::Bool;
 
 /// Container for all publishers used by the node
@@ -13,13 +13,12 @@ pub struct Publishers {
 }
 
 impl Publishers {
-    pub fn from_profile(
-        node: &Arc<Node>,
-        profile: &crate::config::Profile,
-    ) -> Result<Self> {
+    pub fn from_profile(node: &Arc<Node>, profile: &crate::config::Profile) -> Result<Self> {
         let twist_publisher = node
             .create_publisher::<Twist>("cmd_vel", None)
-            .map_err(|e| anyhow::anyhow!("Failed to create twist publisher on /cmd_vel: {:?}", e))?;
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to create twist publisher on /cmd_vel: {:?}", e)
+            })?;
 
         let mut bool_topics = std::collections::HashSet::new();
 
@@ -33,8 +32,9 @@ impl Publishers {
         for topic in bool_topics {
             bool_publishers.insert(
                 topic.clone(),
-                node.create_publisher::<Bool>(&topic, None)
-                    .map_err(|e| anyhow::anyhow!("Failed to create Bool publisher on {}: {:?}", topic, e))?,
+                node.create_publisher::<Bool>(&topic, None).map_err(|e| {
+                    anyhow::anyhow!("Failed to create Bool publisher on {}: {:?}", topic, e)
+                })?,
             );
         }
 

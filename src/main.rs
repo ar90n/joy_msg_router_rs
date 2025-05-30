@@ -13,19 +13,18 @@ mod logging;
 mod profile;
 mod publishers;
 
-use anyhow::{Result, anyhow};
+use anyhow::Context;
+use anyhow::{anyhow, Result};
 use config::{ActionType, InputMapping, InputSource};
 use joy_msg_tracker::JoyMsgTracker;
 use logging::{log_error, LogContext};
 use profile::{is_enabled, load_profile_from_params};
 use publishers::Publishers;
-use anyhow::Context;
 
 fn main() -> Result<()> {
     main_impl()
 }
 
-/// Process all input mappings and handle their actions
 fn process_input_mappings(
     tracker: &JoyMsgTracker,
     input_mappings: &[InputMapping],
@@ -70,9 +69,14 @@ fn process_input_mappings(
                 }
                 has_twist_contribution = true;
             }
-            ActionType::PublishBool { topic, value, once } if (*once && just_activated) || (!*once)  => {
+            ActionType::PublishBool { topic, value, once }
+                if !*once || just_activated =>
+            {
                 let bool_msg = Bool::new()
-                    .map(|mut bool_msg| {bool_msg.data = *value; bool_msg})
+                    .map(|mut bool_msg| {
+                        bool_msg.data = *value;
+                        bool_msg
+                    })
                     .context("Failed to create Bool message")?;
 
                 if let Some(publisher) = publishers.bool_publishers.get(topic) {
@@ -96,7 +100,8 @@ fn process_input_mappings(
                 pr_info!(
                     logger,
                     "Would call service: {} (type: {})",
-                    service_name, service_type
+                    service_name,
+                    service_type
                 );
             }
             _ => {}
@@ -122,15 +127,16 @@ fn process_input_mappings(
 
 fn main_impl() -> Result<()> {
     let logger = Logger::new("joy_msg_router");
-    let ctx = SafeDriveContext::new()
-        .map_err(|e| anyhow!("Failed to create ROS2 context: {:?}", e))?;
+    let ctx =
+        SafeDriveContext::new().map_err(|e| anyhow!("Failed to create ROS2 context: {:?}", e))?;
     let node = Arc::new(
         ctx.create_node("joy_msg_router", None, Default::default())
             .map_err(|e| anyhow!("Failed to create ROS2 node: {:?}", e))?,
     );
-    let profile = node.create_parameter_server()
-            .map_err(|e| anyhow!("Failed to create parameter server: {:?}", e))
-            .and_then(|ps| load_profile_from_params(&ps))?;
+    let profile = node
+        .create_parameter_server()
+        .map_err(|e| anyhow!("Failed to create parameter server: {:?}", e))
+        .and_then(|ps| load_profile_from_params(&ps))?;
 
     pr_info!(logger, "Joy message router node started");
     pr_info!(logger, "Active profile: {}", profile.name);
@@ -139,13 +145,14 @@ fn main_impl() -> Result<()> {
         .create_subscriber::<Joy>("joy", None)
         .map_err(|e| anyhow!("Failed to create joy subscriber: {:?}", e))?;
 
-    let publishers = Arc::new(Publishers::from_profile(&node, &profile)
-        .context("Failed to create publishers")?);
+    let publishers =
+        Arc::new(Publishers::from_profile(&node, &profile).context("Failed to create publishers")?);
 
     let joy_tracker = Arc::new(Mutex::new(JoyMsgTracker::new()));
     let joy_tracker_sub = Arc::clone(&joy_tracker);
 
-    let mut selector = ctx.create_selector()
+    let mut selector = ctx
+        .create_selector()
         .map_err(|e| anyhow!("Failed to create selector: {:?}", e))?;
 
     selector.add_subscriber(
@@ -172,12 +179,7 @@ fn main_impl() -> Result<()> {
             continue;
         };
         if is_enabled(&profile, &tracker) {
-            process_input_mappings(
-                &tracker,
-                &profile.input_mappings,
-                &publishers,
-                &logger,
-            )?;
+            process_input_mappings(&tracker, &profile.input_mappings, &publishers, &logger)?;
         }
     }
 }
@@ -185,7 +187,7 @@ fn main_impl() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Profile, InputMapping, InputSource, ActionType};
+    use crate::config::{ActionType, InputMapping, InputSource, Profile};
     use crate::joy_msg_tracker::JoyMsgTracker;
     use crate::profile::is_enabled;
 
@@ -202,34 +204,6 @@ mod tests {
             .enumerate()
             .for_each(|(i, v)| *v = buttons[i]);
         joy
-    }
-
-    fn create_test_profile() -> Profile {
-        let mut profile = Profile::new("test".to_string());
-
-        // Map axis 0 to linear.x
-        profile.input_mappings.push(InputMapping {
-            source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
-            },
-            scale: 2.0,
-            offset: 0.0,
-            deadzone: 0.1,
-        });
-
-        // Map axis 1 to angular.z
-        profile.input_mappings.push(InputMapping {
-            source: InputSource::Axis(1),
-            action: ActionType::PublishTwistField {
-                field: "angular_z".to_string(),
-            },
-            scale: -1.0,
-            offset: 0.5,
-            deadzone: 0.05,
-        });
-
-        profile
     }
 
     #[test]
@@ -297,5 +271,295 @@ mod tests {
             let tracker_guard = tracker.lock().unwrap();
             assert!(!is_enabled(&profile, &tracker_guard)); // Button 0 not pressed
         }
+    }
+
+    #[test]
+    fn test_button_to_twist_field() {
+        // Test mapping a button to publish a twist field value
+        let mut profile = Profile::new("test".to_string());
+        
+        // Button 0 -> emergency stop (zero linear_x)
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(0),
+            action: ActionType::PublishTwistField {
+                field: "linear_x".to_string(),
+            },
+            scale: 0.0,  // Zero for stop
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        // Button 1 -> fixed forward speed
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(1),
+            action: ActionType::PublishTwistField {
+                field: "linear_x".to_string(),
+            },
+            scale: 0.5,  // Fixed speed
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        // Button 2 -> rotate left
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(2),
+            action: ActionType::PublishTwistField {
+                field: "angular_z".to_string(),
+            },
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        let tracker = JoyMsgTracker::new();
+        
+        // Test button 0 pressed - should output 0
+        let mut tracker_test = tracker.clone();
+        tracker_test.update_buttons(&[1, 0, 0]);
+        let mapping = &profile.input_mappings[0];
+        let value = mapping.process_input(&tracker_test);
+        assert_eq!(value, 0.0); // scale = 0.0
+        
+        // Test button 1 pressed - should output 0.5
+        tracker_test.update_buttons(&[0, 1, 0]);
+        let mapping = &profile.input_mappings[1];
+        let value = mapping.process_input(&tracker_test);
+        assert_eq!(value, 0.5); // scale = 0.5
+        
+        // Test button 2 pressed - should output 1.0
+        tracker_test.update_buttons(&[0, 0, 1]);
+        let mapping = &profile.input_mappings[2];
+        let value = mapping.process_input(&tracker_test);
+        assert_eq!(value, 1.0); // scale = 1.0
+    }
+
+    #[test]
+    fn test_axis_to_bool_action() {
+        // Test using axis as a trigger for boolean action (threshold-based)
+        let mut profile = Profile::new("test".to_string());
+        
+        // Axis 2 (trigger) -> publish bool when pressed beyond threshold
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Axis(2),
+            action: ActionType::PublishBool {
+                topic: "/trigger/pressed".to_string(),
+                value: true,
+                once: true,
+            },
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.5,  // High deadzone acts as threshold
+        });
+        
+        let mut tracker = JoyMsgTracker::new();
+        
+        // Test axis below threshold
+        tracker.update_axes(&[0.0, 0.0, 0.3]);
+        let mapping = &profile.input_mappings[0];
+        let value = mapping.process_input(&tracker);
+        assert_eq!(value, 0.0); // Below deadzone
+        
+        // Test axis above threshold
+        tracker.update_axes(&[0.0, 0.0, 0.7]);
+        let value = mapping.process_input(&tracker);
+        assert!(value > 0.0); // Above deadzone, would trigger bool publish
+    }
+
+    #[test]
+    fn test_multiple_axes_to_twist() {
+        // Test multiple axes controlling different twist fields
+        let mut profile = Profile::new("test".to_string());
+        
+        // Axis 0 -> linear.x (forward/back)
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Axis(0),
+            action: ActionType::PublishTwistField {
+                field: "linear_x".to_string(),
+            },
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        // Axis 1 -> linear.y (strafe for holonomic)
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Axis(1),
+            action: ActionType::PublishTwistField {
+                field: "linear_y".to_string(),
+            },
+            scale: 0.8,
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        // Axis 3 -> angular.z (rotation)
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Axis(3),
+            action: ActionType::PublishTwistField {
+                field: "angular_z".to_string(),
+            },
+            scale: 2.0,
+            offset: 0.0,
+            deadzone: 0.15,
+        });
+        
+        let mut tracker = JoyMsgTracker::new();
+        tracker.update_axes(&[0.5, -0.3, 0.0, 0.8, 0.0]);
+        
+        // Test each axis mapping
+        assert_eq!(profile.input_mappings[0].process_input(&tracker), 0.5 * 1.0);  // Axis 0
+        assert!((profile.input_mappings[1].process_input(&tracker) - (-0.3 * 0.8)).abs() < 0.0001); // Axis 1
+        assert!((profile.input_mappings[2].process_input(&tracker) - (0.8 * 2.0)).abs() < 0.0001);  // Axis 3
+    }
+
+    #[test]
+    fn test_axis_with_offset() {
+        // Test axis mapping with offset (useful for triggers)
+        let mut profile = Profile::new("test".to_string());
+        
+        // Trigger axis that rests at 1.0 and goes to -1.0 when pressed
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Axis(5),
+            action: ActionType::PublishTwistField {
+                field: "linear_x".to_string(),
+            },
+            scale: -0.5,
+            offset: 0.5,
+            deadzone: 0.1,
+        });
+        
+        let mut tracker = JoyMsgTracker::new();
+        
+        // Trigger at rest (1.0)
+        tracker.update_axes(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
+        let value = profile.input_mappings[0].process_input(&tracker);
+        assert_eq!(value, 1.0 * -0.5 + 0.5); // = 0.0
+        
+        // Trigger fully pressed (-1.0)
+        tracker.update_axes(&[0.0, 0.0, 0.0, 0.0, 0.0, -1.0]);
+        let value = profile.input_mappings[0].process_input(&tracker);
+        assert_eq!(value, -1.0 * -0.5 + 0.5); // = 1.0
+    }
+
+    #[test]
+    fn test_button_combinations() {
+        // Test multiple buttons mapped to same field (additive)
+        let mut profile = Profile::new("test".to_string());
+        
+        // D-pad style control
+        // Button 0 -> forward
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(0),
+            action: ActionType::PublishTwistField {
+                field: "linear_x".to_string(),
+            },
+            scale: 0.3,
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        // Button 1 -> backward
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(1),
+            action: ActionType::PublishTwistField {
+                field: "linear_x".to_string(),
+            },
+            scale: -0.3,
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        // Button 2 -> turn left
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(2),
+            action: ActionType::PublishTwistField {
+                field: "angular_z".to_string(),
+            },
+            scale: 0.5,
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        // Button 3 -> turn right
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(3),
+            action: ActionType::PublishTwistField {
+                field: "angular_z".to_string(),
+            },
+            scale: -0.5,
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        let mut tracker = JoyMsgTracker::new();
+        
+        // Test forward + turn left
+        tracker.update_buttons(&[1, 0, 1, 0]);
+        assert_eq!(profile.input_mappings[0].process_input(&tracker), 0.3);  // Forward
+        assert_eq!(profile.input_mappings[2].process_input(&tracker), 0.5);  // Turn left
+        
+        // Test backward + turn right
+        tracker.update_buttons(&[0, 1, 0, 1]);
+        assert_eq!(profile.input_mappings[1].process_input(&tracker), -0.3); // Backward
+        assert_eq!(profile.input_mappings[3].process_input(&tracker), -0.5); // Turn right
+    }
+
+    #[test]
+    fn test_service_call_action() {
+        // Test button triggering service call
+        let mut profile = Profile::new("test".to_string());
+        
+        profile.input_mappings.push(InputMapping {
+            source: InputSource::Button(5),
+            action: ActionType::CallService {
+                service_name: "/emergency_stop".to_string(),
+                service_type: "std_srvs/srv/Trigger".to_string(),
+            },
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        let mut tracker = JoyMsgTracker::new();
+        
+        // Button not pressed
+        tracker.update_buttons(&[0, 0, 0, 0, 0, 0]);
+        assert!(!tracker.just_pressed(5));
+        
+        // Button just pressed
+        tracker.update_buttons(&[0, 0, 0, 0, 0, 1]);
+        assert!(tracker.just_pressed(5));
+        
+        // Button held (should not trigger again)
+        tracker.update_buttons(&[0, 0, 0, 0, 0, 1]);
+        assert!(!tracker.just_pressed(5));
+    }
+
+    #[test]
+    fn test_deadzone_behavior() {
+        let mapping = InputMapping {
+            source: InputSource::Axis(0),
+            action: ActionType::PublishTwistField {
+                field: "linear_x".to_string(),
+            },
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.2,
+        };
+        
+        let mut tracker = JoyMsgTracker::new();
+        
+        // Values within deadzone should return 0
+        for value in &[0.0, 0.1, -0.1, 0.19, -0.19] {
+            tracker.update_axes(&[*value]);
+            assert_eq!(mapping.process_input(&tracker), 0.0);
+        }
+        
+        // Values outside deadzone should be scaled
+        tracker.update_axes(&[0.5]);
+        assert_eq!(mapping.process_input(&tracker), 0.5);
+        
+        tracker.update_axes(&[-0.5]);
+        assert_eq!(mapping.process_input(&tracker), -0.5);
     }
 }
