@@ -1,4 +1,5 @@
 use crate::config::{ActionType, InputMapping, InputSource, Profile};
+use crate::joy_msg_tracker::JoyMsgTracker;
 use anyhow::{anyhow, Result};
 use safe_drive::parameter::{ParameterServer, Value};
 
