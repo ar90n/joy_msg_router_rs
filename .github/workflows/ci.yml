@@ -10,124 +10,87 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-test:
+  build:
     name: Build and Test
-    runs-on: ubuntu-latest
-    container:
-      image: osrf/ros:humble-desktop-full
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y \
-          curl \
-          build-essential \
-          git \
-          pkg-config \
-          libssl-dev
-    
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --component rustfmt clippy
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-        
-    - name: Setup ROS2 environment and install cargo tools
-      shell: bash
-      run: |
-        source /opt/ros/humble/setup.bash
-        export PATH="$HOME/.cargo/bin:$PATH"
-        
-        # Install required cargo tools
-        cargo install safe_drive_msg --version 0.2
-        cargo install cargo-ament-build
-        
-        # Generate messages for safe_drive
-        mkdir -p /tmp/safe_drive_msgs
-        
-        # Generate with explicit ROS2 environment
-        AMENT_PREFIX_PATH=/opt/ros/humble safe_drive_msg std_msgs -o /tmp/safe_drive_msgs -p
-        AMENT_PREFIX_PATH=/opt/ros/humble safe_drive_msg sensor_msgs -o /tmp/safe_drive_msgs -p  
-        AMENT_PREFIX_PATH=/opt/ros/humble safe_drive_msg geometry_msgs -o /tmp/safe_drive_msgs -p
-        
-        # Verify generation
-        echo "Generated message packages:"
-        ls -la /tmp/safe_drive_msgs/
-    
-    - name: Format check
-      shell: bash
-      run: |
-        source /opt/ros/humble/setup.bash
-        export PATH="$HOME/.cargo/bin:$PATH"
-        cargo fmt -- --check
-    
-    - name: Clippy check
-      shell: bash
-      run: |
-        source /opt/ros/humble/setup.bash
-        export PATH="$HOME/.cargo/bin:$PATH"
-        cargo clippy -- -D warnings
-    
-    - name: Build
-      shell: bash
-      run: |
-        source /opt/ros/humble/setup.bash
-        export PATH="$HOME/.cargo/bin:$PATH"
-        cargo build --verbose
-        cargo build --release --verbose
-    
-    - name: Test
-      shell: bash  
-      run: |
-        source /opt/ros/humble/setup.bash
-        export PATH="$HOME/.cargo/bin:$PATH"
-        cargo test --verbose
-        
-  colcon-build:
-    name: Colcon Build
-    runs-on: ubuntu-latest
-    container:
-      image: osrf/ros:humble-desktop-full
-    steps:
-    - uses: actions/checkout@v4
+    - name: Setup ROS 2 Humble
+      uses: ros-tooling/setup-ros@v0.7
+      with:
+        required-ros-distributions: humble
     
     - name: Install dependencies
       run: |
-        apt-get update
-        apt-get install -y \
+        sudo apt-get update
+        sudo apt-get install -y \
           python3-colcon-common-extensions \
-          python3-pip \
-          curl \
-          build-essential \
-          git
-    
+          python3-rosdep \
+          python3-vcstool
+        
     - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-    
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+        
     - name: Install cargo-ament-build
-      shell: bash
-      run: |
-        source /opt/ros/humble/setup.bash
-        export PATH="$HOME/.cargo/bin:$PATH"
-        cargo install cargo-ament-build
+      run: cargo install cargo-ament-build
     
-    - name: Create workspace and build
-      shell: bash
+    - name: Create workspace
       run: |
-        mkdir -p ws/src
-        ln -s $GITHUB_WORKSPACE ws/src/joy_msg_router_rs
-        cd ws
+        mkdir -p ~/ws/src
+        ln -s $GITHUB_WORKSPACE ~/ws/src/
+        
+    - name: Build with colcon
+      run: |
+        cd ~/ws
         source /opt/ros/humble/setup.bash
         colcon build --packages-select joy_msg_router_rs
         
     - name: Run tests
-      shell: bash
       run: |
-        cd ws
+        cd ~/ws
         source /opt/ros/humble/setup.bash
         source install/setup.bash
         colcon test --packages-select joy_msg_router_rs
         colcon test-result --verbose
+        
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup ROS 2 Humble
+      uses: ros-tooling/setup-ros@v0.7
+      with:
+        required-ros-distributions: humble
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+        
+    - name: Install dependencies
+      run: |
+        cargo install cargo-ament-build
+        cargo install safe_drive_msg
+        
+    - name: Generate messages
+      run: |
+        source /opt/ros/humble/setup.bash
+        mkdir -p /tmp/safe_drive_msgs
+        safe_drive_msg std_msgs -o /tmp/safe_drive_msgs -p
+        safe_drive_msg sensor_msgs -o /tmp/safe_drive_msgs -p
+        safe_drive_msg geometry_msgs -o /tmp/safe_drive_msgs -p
+        
+    - name: Format check
+      run: |
+        source /opt/ros/humble/setup.bash
+        cargo fmt -- --check
+        
+    - name: Clippy
+      run: |
+        source /opt/ros/humble/setup.bash
+        cargo clippy -- -D warnings
