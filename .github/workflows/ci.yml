@@ -27,15 +27,27 @@ jobs:
         sudo apt-get install -y \
           python3-colcon-common-extensions \
           python3-rosdep \
-          python3-vcstool
+          python3-vcstool \
+          python3-pip
+        
+        # Install colcon plugins for cargo
+        pip3 install colcon-cargo colcon-ros-cargo
         
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt, clippy
         
-    - name: Install cargo-ament-build
-      run: cargo install cargo-ament-build
+    - name: Install cargo-ament-build from Tier4
+      run: |
+        # Install to system cargo location to avoid conflicts
+        sudo mkdir -p /usr/local/cargo/bin
+        git clone https://github.com/tier4/cargo-ament-build.git
+        cd cargo-ament-build
+        cargo build --release
+        sudo cp target/release/cargo-ament-build /usr/local/cargo/bin/
+        # Make it available in PATH
+        echo "/usr/local/cargo/bin" >> $GITHUB_PATH
     
     - name: Create workspace
       run: |
@@ -46,6 +58,9 @@ jobs:
       run: |
         cd ~/ws
         source /opt/ros/humble/setup.bash
+        # Ensure we use the correct cargo-ament-build
+        export PATH="/usr/local/cargo/bin:$PATH"
+        which cargo-ament-build
         colcon build --packages-select joy_msg_router_rs
         
     - name: Format check

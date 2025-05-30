@@ -29,13 +29,25 @@ jobs:
           python3-rosdep \
           fakeroot \
           dpkg-dev \
-          debhelper
+          debhelper \
+          python3-pip
+        
+        # Install colcon plugins for cargo
+        pip3 install colcon-cargo colcon-ros-cargo
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
-    - name: Install cargo-ament-build
-      run: cargo install cargo-ament-build
+    - name: Install cargo-ament-build from Tier4
+      run: |
+        # Install to system cargo location to avoid conflicts
+        sudo mkdir -p /usr/local/cargo/bin
+        git clone https://github.com/tier4/cargo-ament-build.git
+        cd cargo-ament-build
+        cargo build --release
+        sudo cp target/release/cargo-ament-build /usr/local/cargo/bin/
+        # Make it available in PATH
+        echo "/usr/local/cargo/bin" >> $GITHUB_PATH
     
     - name: Get version
       id: get_version
@@ -56,6 +68,7 @@ jobs:
         
         # Build
         source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+        export PATH="/usr/local/cargo/bin:$PATH"
         colcon build --packages-select joy_msg_router_rs
         
         # Create debian structure
