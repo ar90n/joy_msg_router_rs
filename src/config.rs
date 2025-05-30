@@ -91,19 +91,6 @@ pub enum ActionType {
         field: OutputField,
     },
 
-    /// Publish a TwistStamped message
-    PublishTwistStamped {
-        linear_x: f64,
-        linear_y: f64,
-        linear_z: f64,
-        angular_x: f64,
-        angular_y: f64,
-        angular_z: f64,
-        frame_id: String,
-        /// Whether to publish only once (true) or continuously while active (false)
-        #[serde(default)]
-        once: bool,
-    },
 
     /// Publish a Bool message
     PublishBool {
