@@ -28,19 +28,22 @@ jobs:
         
     - name: Install dependencies
       run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-colcon-common-extensions
         cargo install cargo-llvm-cov
-        cargo install safe_drive_msg
+        cargo install cargo-ament-build
         
-    - name: Generate messages
+    - name: Create workspace and build for message generation
       run: |
+        mkdir -p ~/ws/src
+        ln -s $GITHUB_WORKSPACE ~/ws/src/
+        cd ~/ws
         source /opt/ros/humble/setup.bash
-        mkdir -p /tmp/safe_drive_msgs
-        safe_drive_msg std_msgs -o /tmp/safe_drive_msgs -p
-        safe_drive_msg sensor_msgs -o /tmp/safe_drive_msgs -p
-        safe_drive_msg geometry_msgs -o /tmp/safe_drive_msgs -p
+        colcon build --packages-select joy_msg_router_rs
         
     - name: Generate coverage
       run: |
+        cd ~/ws/src/joy_msg_router_rs
         source /opt/ros/humble/setup.bash
         cargo llvm-cov --all-features --lcov --output-path lcov.info
     

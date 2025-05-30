@@ -124,12 +124,18 @@ impl InputMapping {
             }
         }
     }
-    
+
     #[cfg(test)]
     pub fn process_input(&self, tracker: &crate::joy_msg_tracker::JoyMsgTracker) -> f64 {
         let raw_value = match self.source {
             InputSource::Axis(idx) => tracker.get_axis(idx).unwrap_or(0.0) as f64,
-            InputSource::Button(idx) => if tracker.is_pressed(idx) { 1.0 } else { 0.0 },
+            InputSource::Button(idx) => {
+                if tracker.is_pressed(idx) {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
         };
         self.process_value(raw_value)
     }

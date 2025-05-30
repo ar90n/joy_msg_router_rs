@@ -44,18 +44,10 @@ impl Publishers {
         }
 
         let publisher = match message_type {
-            "std_msgs/msg/Bool" => {
-                Publisher::Bool(node.create_publisher::<Bool>(topic, None)?)
-            }
-            "std_msgs/msg/Int16" => {
-                Publisher::Int16(node.create_publisher::<Int16>(topic, None)?)
-            }
-            "std_msgs/msg/Int32" => {
-                Publisher::Int32(node.create_publisher::<Int32>(topic, None)?)
-            }
-            "std_msgs/msg/Int64" => {
-                Publisher::Int64(node.create_publisher::<Int64>(topic, None)?)
-            }
+            "std_msgs/msg/Bool" => Publisher::Bool(node.create_publisher::<Bool>(topic, None)?),
+            "std_msgs/msg/Int16" => Publisher::Int16(node.create_publisher::<Int16>(topic, None)?),
+            "std_msgs/msg/Int32" => Publisher::Int32(node.create_publisher::<Int32>(topic, None)?),
+            "std_msgs/msg/Int64" => Publisher::Int64(node.create_publisher::<Int64>(topic, None)?),
             "std_msgs/msg/Float32" => {
                 Publisher::Float32(node.create_publisher::<Float32>(topic, None)?)
             }
@@ -80,12 +72,7 @@ impl Publishers {
     }
 
     /// Publish a value to a generic topic
-    pub fn publish_value(
-        &self,
-        topic: &str,
-        value: f64,
-        field: Option<&str>,
-    ) -> Result<()> {
+    pub fn publish_value(&self, topic: &str, value: f64, field: Option<&str>) -> Result<()> {
         let (publisher, message_type) = self
             .publishers
             .get(topic)
@@ -95,37 +82,51 @@ impl Publishers {
             (Publisher::Bool(pub_ref), "std_msgs/msg/Bool") => {
                 let mut msg = Bool::new().unwrap();
                 msg.data = value != 0.0;
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             (Publisher::Int16(pub_ref), "std_msgs/msg/Int16") => {
                 let mut msg = Int16::new().unwrap();
                 msg.data = value as i16;
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             (Publisher::Int32(pub_ref), "std_msgs/msg/Int32") => {
                 let mut msg = Int32::new().unwrap();
                 msg.data = value as i32;
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             (Publisher::Int64(pub_ref), "std_msgs/msg/Int64") => {
                 let mut msg = Int64::new().unwrap();
                 msg.data = value as i64;
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             (Publisher::Float32(pub_ref), "std_msgs/msg/Float32") => {
                 let mut msg = Float32::new().unwrap();
                 msg.data = value as f32;
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             (Publisher::Float64(pub_ref), "std_msgs/msg/Float64") => {
                 let mut msg = Float64::new().unwrap();
                 msg.data = value;
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             (Publisher::String(pub_ref), "std_msgs/msg/String") => {
                 let mut msg = StringMsg::new().unwrap();
                 msg.data.assign(&value.to_string());
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send String: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send String: {:?}", e))?;
             }
             (Publisher::Twist(pub_ref), "geometry_msgs/msg/Twist") => {
                 let mut msg = Twist::new().unwrap();
@@ -140,7 +141,9 @@ impl Publishers {
                         _ => return Err(anyhow!("Unknown Twist field: {}", field_name)),
                     }
                 }
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             (Publisher::Vector3(pub_ref), "geometry_msgs/msg/Vector3") => {
                 let mut msg = Vector3::new().unwrap();
@@ -152,7 +155,9 @@ impl Publishers {
                         _ => return Err(anyhow!("Unknown Vector3 field: {}", field_name)),
                     }
                 }
-                pub_ref.send(&msg).map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
+                pub_ref
+                    .send(&msg)
+                    .map_err(|e| anyhow!("Failed to send Bool: {:?}", e))?;
             }
             _ => return Err(anyhow!("Type mismatch for topic: {}", topic)),
         }
@@ -178,7 +183,7 @@ impl Publishers {
 
         Ok(publishers)
     }
-    
+
     /// Check if a topic publishes Twist messages
     #[allow(dead_code)]
     pub fn is_twist_topic(&self, topic: &str) -> bool {
@@ -187,7 +192,7 @@ impl Publishers {
             .map(|(_, msg_type)| msg_type == "geometry_msgs/msg/Twist")
             .unwrap_or(false)
     }
-    
+
     /// Publish accumulated Twist message
     pub fn publish_twist(&self, topic: &str, twist: &Twist) -> Result<()> {
         let (publisher, message_type) = self
@@ -197,11 +202,13 @@ impl Publishers {
 
         match (publisher, message_type.as_str()) {
             (Publisher::Twist(pub_ref), "geometry_msgs/msg/Twist") => {
-                pub_ref.send(twist).map_err(|e| anyhow!("Failed to send Twist: {:?}", e))?;
+                pub_ref
+                    .send(twist)
+                    .map_err(|e| anyhow!("Failed to send Twist: {:?}", e))?;
             }
             _ => return Err(anyhow!("Topic {} is not a Twist publisher", topic)),
         }
-        
+
         Ok(())
     }
 

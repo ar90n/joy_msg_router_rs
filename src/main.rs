@@ -33,7 +33,8 @@ fn process_input_mappings(
     logger: &Logger,
 ) -> Result<()> {
     // Collect Twist contributions per topic
-    let mut twist_accumulators: std::collections::HashMap<String, Twist> = std::collections::HashMap::new();
+    let mut twist_accumulators: std::collections::HashMap<String, Twist> =
+        std::collections::HashMap::new();
 
     for mapping in input_mappings {
         let (input_value, is_active, just_activated) = match mapping.source {
@@ -66,9 +67,10 @@ fn process_input_mappings(
             } if is_active && (!*once || just_activated) => {
                 // Special handling for Twist messages - accumulate values
                 if message_type == "geometry_msgs/msg/Twist" {
-                    let twist = twist_accumulators.entry(topic.clone())
+                    let twist = twist_accumulators
+                        .entry(topic.clone())
                         .or_insert_with(|| Twist::new().unwrap());
-                    
+
                     if let Some(field_name) = field {
                         match field_name.as_str() {
                             "linear.x" | "linear_x" => twist.linear.x += processed_value,
@@ -84,7 +86,9 @@ fn process_input_mappings(
                     }
                 } else {
                     // For non-Twist messages, publish immediately
-                    if let Err(e) = publishers.publish_value(topic, processed_value, field.as_deref()) {
+                    if let Err(e) =
+                        publishers.publish_value(topic, processed_value, field.as_deref())
+                    {
                         log_error(
                             logger,
                             LogContext {
@@ -110,14 +114,10 @@ fn process_input_mappings(
                         service_name,
                         service_type
                     );
-                    
+
                     // TODO: Implement actual service calls when std_srvs types are available
                 } else {
-                    pr_warn!(
-                        logger,
-                        "Service {} not configured in clients",
-                        service_name
-                    );
+                    pr_warn!(logger, "Service {} not configured in clients", service_name);
                 }
             }
             _ => {}
@@ -162,11 +162,15 @@ fn main_impl() -> Result<()> {
         .create_subscriber::<Joy>("joy", None)
         .map_err(|e| anyhow!("Failed to create joy subscriber: {:?}", e))?;
 
-    let publishers = 
-        Arc::new(publishers::Publishers::from_profile(&node, &profile).context("Failed to create publishers")?);
-    
-    let clients = 
-        Arc::new(ServiceClients::from_profile(&node, &profile).context("Failed to create service clients")?);
+    let publishers = Arc::new(
+        publishers::Publishers::from_profile(&node, &profile)
+            .context("Failed to create publishers")?,
+    );
+
+    let clients = Arc::new(
+        ServiceClients::from_profile(&node, &profile)
+            .context("Failed to create service clients")?,
+    );
 
     let joy_tracker = Arc::new(Mutex::new(JoyMsgTracker::new()));
     let joy_tracker_sub = Arc::clone(&joy_tracker);
@@ -199,7 +203,13 @@ fn main_impl() -> Result<()> {
             continue;
         };
         if is_enabled(&profile, &tracker) {
-            process_input_mappings(&tracker, &profile.input_mappings, &publishers, &clients, &logger)?;
+            process_input_mappings(
+                &tracker,
+                &profile.input_mappings,
+                &publishers,
+                &clients,
+                &logger,
+            )?;
         }
     }
 }
@@ -297,7 +307,7 @@ mod tests {
     fn test_button_to_twist_field() {
         // Test mapping a button to publish a twist field value
         let mut profile = Profile::new("test".to_string());
-        
+
         // Button 0 -> emergency stop (zero linear_x)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
@@ -307,11 +317,11 @@ mod tests {
                 field: Some("linear.x".to_string()),
                 once: false,
             },
-            scale: 0.0,  // Zero for stop
+            scale: 0.0, // Zero for stop
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 1 -> fixed forward speed
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
@@ -321,11 +331,11 @@ mod tests {
                 field: Some("linear.x".to_string()),
                 once: false,
             },
-            scale: 0.5,  // Fixed speed
+            scale: 0.5, // Fixed speed
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 2 -> rotate left
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(2),
@@ -339,22 +349,22 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         let tracker = JoyMsgTracker::new();
-        
+
         // Test button 0 pressed - should output 0
         let mut tracker_test = tracker.clone();
         tracker_test.update_buttons(&[1, 0, 0]);
         let mapping = &profile.input_mappings[0];
         let value = mapping.process_input(&tracker_test);
         assert_eq!(value, 0.0); // scale = 0.0
-        
+
         // Test button 1 pressed - should output 0.5
         tracker_test.update_buttons(&[0, 1, 0]);
         let mapping = &profile.input_mappings[1];
         let value = mapping.process_input(&tracker_test);
         assert_eq!(value, 0.5); // scale = 0.5
-        
+
         // Test button 2 pressed - should output 1.0
         tracker_test.update_buttons(&[0, 0, 1]);
         let mapping = &profile.input_mappings[2];
@@ -366,7 +376,7 @@ mod tests {
     fn test_axis_to_bool_action() {
         // Test using axis as a trigger for boolean action (threshold-based)
         let mut profile = Profile::new("test".to_string());
-        
+
         // Axis 2 (trigger) -> publish bool when pressed beyond threshold
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(2),
@@ -378,17 +388,17 @@ mod tests {
             },
             scale: 1.0,
             offset: 0.0,
-            deadzone: 0.5,  // High deadzone acts as threshold
+            deadzone: 0.5, // High deadzone acts as threshold
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Test axis below threshold
         tracker.update_axes(&[0.0, 0.0, 0.3]);
         let mapping = &profile.input_mappings[0];
         let value = mapping.process_input(&tracker);
         assert_eq!(value, 0.0); // Below deadzone
-        
+
         // Test axis above threshold
         tracker.update_axes(&[0.0, 0.0, 0.7]);
         let value = mapping.process_input(&tracker);
@@ -399,7 +409,7 @@ mod tests {
     fn test_multiple_axes_to_twist() {
         // Test multiple axes controlling different twist fields
         let mut profile = Profile::new("test".to_string());
-        
+
         // Axis 0 -> linear.x (forward/back)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
@@ -413,7 +423,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.1,
         });
-        
+
         // Axis 1 -> linear.y (strafe for holonomic)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(1),
@@ -427,7 +437,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.1,
         });
-        
+
         // Axis 3 -> angular.z (rotation)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(3),
@@ -441,21 +451,22 @@ mod tests {
             offset: 0.0,
             deadzone: 0.15,
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
         tracker.update_axes(&[0.5, -0.3, 0.0, 0.8, 0.0]);
-        
+
         // Test each axis mapping
-        assert_eq!(profile.input_mappings[0].process_input(&tracker), 0.5 * 1.0);  // Axis 0
+        assert_eq!(profile.input_mappings[0].process_input(&tracker), 0.5 * 1.0); // Axis 0
         assert!((profile.input_mappings[1].process_input(&tracker) - (-0.3 * 0.8)).abs() < 0.0001); // Axis 1
-        assert!((profile.input_mappings[2].process_input(&tracker) - (0.8 * 2.0)).abs() < 0.0001);  // Axis 3
+        assert!((profile.input_mappings[2].process_input(&tracker) - (0.8 * 2.0)).abs() < 0.0001);
+        // Axis 3
     }
 
     #[test]
     fn test_axis_with_offset() {
         // Test axis mapping with offset (useful for triggers)
         let mut profile = Profile::new("test".to_string());
-        
+
         // Trigger axis that rests at 1.0 and goes to -1.0 when pressed
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(5),
@@ -469,14 +480,14 @@ mod tests {
             offset: 0.5,
             deadzone: 0.1,
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Trigger at rest (1.0)
         tracker.update_axes(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
         let value = profile.input_mappings[0].process_input(&tracker);
         assert_eq!(value, 1.0 * -0.5 + 0.5); // = 0.0
-        
+
         // Trigger fully pressed (-1.0)
         tracker.update_axes(&[0.0, 0.0, 0.0, 0.0, 0.0, -1.0]);
         let value = profile.input_mappings[0].process_input(&tracker);
@@ -487,7 +498,7 @@ mod tests {
     fn test_button_combinations() {
         // Test multiple buttons mapped to same field (additive)
         let mut profile = Profile::new("test".to_string());
-        
+
         // D-pad style control
         // Button 0 -> forward
         profile.input_mappings.push(InputMapping {
@@ -502,7 +513,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 1 -> backward
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
@@ -516,7 +527,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 2 -> turn left
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(2),
@@ -530,7 +541,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 3 -> turn right
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(3),
@@ -544,14 +555,14 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Test forward + turn left
         tracker.update_buttons(&[1, 0, 1, 0]);
-        assert_eq!(profile.input_mappings[0].process_input(&tracker), 0.3);  // Forward
-        assert_eq!(profile.input_mappings[2].process_input(&tracker), 0.5);  // Turn left
-        
+        assert_eq!(profile.input_mappings[0].process_input(&tracker), 0.3); // Forward
+        assert_eq!(profile.input_mappings[2].process_input(&tracker), 0.5); // Turn left
+
         // Test backward + turn right
         tracker.update_buttons(&[0, 1, 0, 1]);
         assert_eq!(profile.input_mappings[1].process_input(&tracker), -0.3); // Backward
@@ -562,7 +573,7 @@ mod tests {
     fn test_service_call_action() {
         // Test button triggering service call
         let mut profile = Profile::new("test".to_string());
-        
+
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(5),
             action: ActionType::CallService {
@@ -573,26 +584,26 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Button not pressed
         tracker.update_buttons(&[0, 0, 0, 0, 0, 0]);
         assert!(!tracker.just_pressed(5));
-        
+
         // Button just pressed
         tracker.update_buttons(&[0, 0, 0, 0, 0, 1]);
         assert!(tracker.just_pressed(5));
-        
+
         // Button held (should not trigger again)
         tracker.update_buttons(&[0, 0, 0, 0, 0, 1]);
         assert!(!tracker.just_pressed(5));
     }
-    
+
     #[test]
     fn test_service_clients_creation() {
         use crate::clients::ServiceClients;
-        
+
         let mappings = vec![
             // Add a supported service (Trigger)
             InputMapping {
@@ -617,9 +628,9 @@ mod tests {
                 deadzone: 0.0,
             },
         ];
-        
+
         let clients = ServiceClients::from_mappings(&mappings);
-        
+
         // Check that only the Trigger service was registered
         assert!(clients.has_service("/reset_odometry"));
         assert!(!clients.has_service("/set_mode"));
@@ -640,23 +651,23 @@ mod tests {
             offset: 0.0,
             deadzone: 0.2,
         };
-        
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Values within deadzone should return 0
         for value in &[0.0, 0.1, -0.1, 0.19, -0.19] {
             tracker.update_axes(&[*value]);
             assert_eq!(mapping.process_input(&tracker), 0.0);
         }
-        
+
         // Values outside deadzone should be scaled
         tracker.update_axes(&[0.5]);
         assert_eq!(mapping.process_input(&tracker), 0.5);
-        
+
         tracker.update_axes(&[-0.5]);
         assert_eq!(mapping.process_input(&tracker), -0.5);
     }
-    
+
     #[test]
     fn test_generic_publish_float64() {
         let mapping = InputMapping {
@@ -671,14 +682,14 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         };
-        
+
         let mut tracker = JoyMsgTracker::new();
         tracker.update_axes(&[1.0]);
-        
+
         // Should scale the input value
         assert_eq!(mapping.process_value(1.0), 0.5);
     }
-    
+
     #[test]
     fn test_generic_publish_vector3() {
         let mapping = InputMapping {
@@ -693,10 +704,10 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         };
-        
+
         let mut tracker = JoyMsgTracker::new();
         tracker.update_buttons(&[1]);
-        
+
         // Button pressed should produce scaled value
         assert_eq!(mapping.process_value(1.0), 5.0);
     }
