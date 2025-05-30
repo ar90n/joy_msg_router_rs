@@ -229,7 +229,7 @@ mod tests {
         let mut tracker = JoyMsgTracker::new();
         
         // Initial state
-        assert_eq!(tracker.get_axes(), &[]);
+        assert_eq!(tracker.get_axes(), &[] as &[f32]);
         assert_eq!(tracker.get_axis(0), None);
         
         // Update axes

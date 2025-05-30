@@ -13,24 +13,30 @@ profiles:
         scale: 1.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Button also contributing to forward speed (turbo boost)
       - source_type: button
         source_index: 0  # X button
         scale: 0.5       # Add 0.5 m/s when pressed
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Another button for reverse
       - source_type: button
         source_index: 1  # Circle button
         scale: -0.3      # Negative speed for reverse
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Axis for rotation
       - source_type: axis
@@ -38,20 +44,26 @@ profiles:
         scale: 2.0
         deadzone: 0.15
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
       
       # Buttons for discrete rotation
       - source_type: button
         source_index: 4  # L1 - rotate left
         scale: -1.0
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
       
       - source_type: button
         source_index: 5  # R1 - rotate right
         scale: 1.0
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"

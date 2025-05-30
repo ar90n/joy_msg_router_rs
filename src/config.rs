@@ -41,37 +41,13 @@ fn default_deadzone() -> f64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ActionType {
-    PublishTwistField {
-        field: String, // "linear_x", "linear_y", "linear_z", "angular_x", "angular_y", "angular_z"
-    },
-
-    PublishBool {
+    /// Generic message publishing with runtime type specification
+    /// Handles all message types including Twist
+    Publish {
         topic: String,
-        value: bool,
-        /// Whether to publish only once (true) or continuously while active (false)
-        #[serde(default = "default_true")]
-        once: bool,
-    },
-
-    PublishInt32 {
-        topic: String,
-        value: i32,
-        /// Whether to publish only once (true) or continuously while active (false)
-        #[serde(default = "default_true")]
-        once: bool,
-    },
-
-    PublishFloat64 {
-        topic: String,
-        value: f64,
-        /// Whether to publish only once (true) or continuously while active (false)
-        #[serde(default = "default_true")]
-        once: bool,
-    },
-
-    PublishString {
-        topic: String,
-        value: String,
+        message_type: String, // e.g., "std_msgs/msg/Float64", "geometry_msgs/msg/Twist"
+        /// Field to set in the message (e.g., "data" for std_msgs, "linear.x" for Twist)
+        field: Option<String>,
         /// Whether to publish only once (true) or continuously while active (false)
         #[serde(default = "default_true")]
         once: bool,
@@ -167,8 +143,11 @@ mod tests {
     fn test_axis_input_processing() {
         let mapping = InputMapping {
             source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 2.0,
             offset: 0.5,
@@ -184,9 +163,10 @@ mod tests {
     fn test_button_input_processing() {
         let mapping = InputMapping {
             source: InputSource::Button(0),
-            action: ActionType::PublishBool {
+            action: ActionType::Publish {
                 topic: "test".to_string(),
-                value: true,
+                message_type: "std_msgs/msg/Bool".to_string(),
+                field: None,
                 once: true,
             },
             scale: 2.0,
@@ -206,8 +186,11 @@ mod tests {
 
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 1.0,
             offset: 0.0,
@@ -216,8 +199,11 @@ mod tests {
 
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "angular_z".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("angular.z".to_string()),
+                once: false,
             },
             scale: 1.0,
             offset: 0.0,
@@ -233,8 +219,11 @@ mod tests {
 
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 1.0,
             offset: 0.0,
@@ -250,8 +239,11 @@ mod tests {
 
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 0.0,
             offset: 0.0,
@@ -267,9 +259,10 @@ mod tests {
 
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
-            action: ActionType::PublishBool {
+            action: ActionType::Publish {
                 topic: "test".to_string(),
-                value: true,
+                message_type: "std_msgs/msg/Bool".to_string(),
+                field: None,
                 once: true,
             },
             scale: 1.0,

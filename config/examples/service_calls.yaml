@@ -1,0 +1,51 @@
+# Example configuration demonstrating service call mappings
+# This shows how to map joystick buttons to ROS2 service calls
+
+joy_msg_router:
+  ros__parameters:
+    profile_name: "service_calls_example"
+    input_mappings:
+      # Button 0 (X button on PS4) - Reset odometry
+      - source:
+          type: "button"
+          index: 0
+        action:
+          type: "call_service"
+          service_name: "/reset_odometry"
+          service_type: "std_srvs/srv/Trigger"
+      
+      # Button 1 (Circle button on PS4) - Emergency stop
+      - source:
+          type: "button"
+          index: 1
+        action:
+          type: "call_service"
+          service_name: "/emergency_stop"
+          service_type: "std_srvs/srv/Trigger"
+      
+      # Button 2 (Triangle button on PS4) - Start autonomous mode
+      - source:
+          type: "button"
+          index: 2
+        action:
+          type: "call_service"
+          service_name: "/start_autonomous"
+          service_type: "std_srvs/srv/Trigger"
+      
+      # Button 3 (Square button on PS4) - Stop autonomous mode
+      - source:
+          type: "button"
+          index: 3
+        action:
+          type: "call_service"
+          service_name: "/stop_autonomous"
+          service_type: "std_srvs/srv/Trigger"
+      
+      # Example of unsupported service type (will be ignored)
+      # - source:
+      #     type: "button"
+      #     index: 4
+      #   action:
+      #     type: "call_service"
+      #     service_name: "/set_mode"
+      #     service_type: "custom_srvs/srv/SetMode"  # Not supported yet

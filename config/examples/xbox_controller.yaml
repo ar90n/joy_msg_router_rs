@@ -40,8 +40,10 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Rotation with right stick
       - source_type: axis
@@ -50,8 +52,10 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
     
       # A button - slow forward
       - source_type: button
@@ -60,8 +64,10 @@ profiles:
         offset: 0.0
         deadzone: 0.0
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # B button - stop
       - source_type: button
@@ -70,8 +76,10 @@ profiles:
         offset: 0.0
         deadzone: 0.0
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
 
   xbox_racing:
     # Racing-style controls with triggers
@@ -85,8 +93,10 @@ profiles:
         offset: 0.5       # Offset to make trigger center = 0 speed
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # LT for reverse/brake
       - source_type: axis
@@ -95,8 +105,10 @@ profiles:
         offset: -0.25
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Left stick for steering
       - source_type: axis
@@ -105,8 +117,10 @@ profiles:
         offset: 0.0
         deadzone: 0.05
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
 
   xbox_dpad:
     # D-pad only control for precise movement
@@ -119,8 +133,10 @@ profiles:
         offset: 0.0
         deadzone: 0.5     # High deadzone for digital behavior
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # D-pad X for rotation
       - source_type: axis
@@ -129,5 +145,7 @@ profiles:
         offset: 0.0
         deadzone: 0.5
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"

@@ -17,8 +17,10 @@ profiles:
         offset: 0.0             # Offset added after scaling
         deadzone: 0.1           # Values below this threshold are treated as zero
         action:
-          type: publish_twist_field
-          field: linear_x       # Options: linear_x, linear_y, linear_z, angular_x, angular_y, angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"       # Options: linear_x, linear_y, linear_z, angular_x, angular_y, angular_z
       
       # Rotation (right stick X-axis)
       - source_type: axis
@@ -27,15 +29,19 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
     
       # X button - emergency stop (publishes zero twist)
       - source_type: button
         source_index: 0
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
         scale: 0.0    # Zero output for emergency stop
         offset: 0.0
         deadzone: 0.0
@@ -53,8 +59,10 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       - source_type: axis
         source_index: 3
@@ -62,8 +70,10 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
     
       # Triangle button - call service to change mode
       - source_type: button
@@ -91,41 +101,43 @@ profiles:
         offset: 0.0
         deadzone: 0.05
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Button to boolean message
       - source_type: button
         source_index: 5
         action:
-          type: publish_bool
+          type: publish
           topic: "/lights/enable"
-          value: true
+          message_type: "std_msgs/msg/Bool"
           once: true    # Publish only on button press, not continuously
       
       # Button to integer message
       - source_type: button
         source_index: 6
         action:
-          type: publish_int32
+          type: publish
           topic: "/mode/select"
-          value: 1
+          message_type: "std_msgs/msg/Int32"
           once: true
       
       # Button to float message
       - source_type: button
         source_index: 7
         action:
-          type: publish_float64
+          type: publish
           topic: "/speed/multiplier"
-          value: 2.0
+          message_type: "std_msgs/msg/Float64"
           once: false   # Publish continuously while pressed
       
       # Button to string message
       - source_type: button
         source_index: 8
         action:
-          type: publish_string
+          type: publish
           topic: "/status/message"
-          value: "Emergency Stop Activated"
+          message_type: "std_msgs/msg/String"
           once: true

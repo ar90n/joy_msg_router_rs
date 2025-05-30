@@ -41,8 +41,10 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Rotation with right stick
       - source_type: axis
@@ -51,8 +53,10 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
     
       # Square button - full stop
       - source_type: button
@@ -61,8 +65,10 @@ profiles:
         offset: 0.0
         deadzone: 0.0
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
 
   ps4_triggers:
     # Use triggers for forward/backward control
@@ -76,8 +82,10 @@ profiles:
         offset: 0.25      # Offset to handle trigger rest position
         deadzone: 0.2
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # L2 for backward (scale to negative motion)
       - source_type: axis
@@ -86,8 +94,10 @@ profiles:
         offset: -0.25
         deadzone: 0.2
         action:
-          type: publish_twist_field
-          field: linear_x
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
       
       # Right stick for steering
       - source_type: axis
@@ -96,5 +106,7 @@ profiles:
         offset: 0.0
         deadzone: 0.1
         action:
-          type: publish_twist_field
-          field: angular_z
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"

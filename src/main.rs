@@ -1,12 +1,12 @@
 use safe_drive::{
-    context::Context as SafeDriveContext, logger::Logger, pr_debug, pr_error, pr_info,
+    context::Context as SafeDriveContext, logger::Logger, pr_debug, pr_error, pr_info, pr_warn,
 };
 use std::sync::{Arc, Mutex};
 
 use geometry_msgs::msg::Twist;
 use sensor_msgs::msg::Joy;
-use std_msgs::msg::Bool;
 
+mod clients;
 mod config;
 mod joy_msg_tracker;
 mod logging;
@@ -15,11 +15,11 @@ mod publishers;
 
 use anyhow::Context;
 use anyhow::{anyhow, Result};
+use clients::ServiceClients;
 use config::{ActionType, InputMapping, InputSource};
 use joy_msg_tracker::JoyMsgTracker;
 use logging::{log_error, LogContext};
 use profile::{is_enabled, load_profile_from_params};
-use publishers::Publishers;
 
 fn main() -> Result<()> {
     main_impl()
@@ -28,18 +28,19 @@ fn main() -> Result<()> {
 fn process_input_mappings(
     tracker: &JoyMsgTracker,
     input_mappings: &[InputMapping],
-    publishers: &Publishers,
+    publishers: &publishers::Publishers,
+    clients: &ServiceClients,
     logger: &Logger,
 ) -> Result<()> {
-    let mut twist_accumulator = Twist::new().context("Failed to create Twist message")?;
-    let mut has_twist_contribution = false;
+    // Collect Twist contributions per topic
+    let mut twist_accumulators: std::collections::HashMap<String, Twist> = std::collections::HashMap::new();
 
     for mapping in input_mappings {
         let (input_value, is_active, just_activated) = match mapping.source {
             InputSource::Axis(idx) => {
                 let value = tracker.get_axis(idx).unwrap_or(0.0) as f64;
                 let processed = mapping.process_value(value);
-                (processed, processed.abs() > 0.0, false)
+                (value, processed.abs() > 0.0, false)
             }
             InputSource::Button(idx) => {
                 let pressed = tracker.is_pressed(idx);
@@ -53,42 +54,45 @@ fn process_input_mappings(
             continue; // Skip inactive mappings
         }
 
-        match &mapping.action {
-            ActionType::PublishTwistField { field } => {
-                match field.as_str() {
-                    "linear_x" => twist_accumulator.linear.x += input_value,
-                    "linear_y" => twist_accumulator.linear.y += input_value,
-                    "linear_z" => twist_accumulator.linear.z += input_value,
-                    "angular_x" => twist_accumulator.angular.x += input_value,
-                    "angular_y" => twist_accumulator.angular.y += input_value,
-                    "angular_z" => twist_accumulator.angular.z += input_value,
-                    _ => {
-                        pr_error!(logger, "Unknown twist field: {}", field);
-                        continue;
-                    }
-                }
-                has_twist_contribution = true;
-            }
-            ActionType::PublishBool { topic, value, once }
-                if !*once || just_activated =>
-            {
-                let bool_msg = Bool::new()
-                    .map(|mut bool_msg| {
-                        bool_msg.data = *value;
-                        bool_msg
-                    })
-                    .context("Failed to create Bool message")?;
+        // Calculate processed value with scale, offset, and deadzone
+        let processed_value = mapping.process_value(input_value);
 
-                if let Some(publisher) = publishers.bool_publishers.get(topic) {
-                    if let Err(e) = publisher.send(&bool_msg) {
+        match &mapping.action {
+            ActionType::Publish {
+                topic,
+                message_type,
+                field,
+                once,
+            } if is_active && (!*once || just_activated) => {
+                // Special handling for Twist messages - accumulate values
+                if message_type == "geometry_msgs/msg/Twist" {
+                    let twist = twist_accumulators.entry(topic.clone())
+                        .or_insert_with(|| Twist::new().unwrap());
+                    
+                    if let Some(field_name) = field {
+                        match field_name.as_str() {
+                            "linear.x" | "linear_x" => twist.linear.x += processed_value,
+                            "linear.y" | "linear_y" => twist.linear.y += processed_value,
+                            "linear.z" | "linear_z" => twist.linear.z += processed_value,
+                            "angular.x" | "angular_x" => twist.angular.x += processed_value,
+                            "angular.y" | "angular_y" => twist.angular.y += processed_value,
+                            "angular.z" | "angular_z" => twist.angular.z += processed_value,
+                            _ => {
+                                pr_error!(logger, "Unknown twist field: {}", field_name);
+                            }
+                        }
+                    }
+                } else {
+                    // For non-Twist messages, publish immediately
+                    if let Err(e) = publishers.publish_value(topic, processed_value, field.as_deref()) {
                         log_error(
                             logger,
                             LogContext {
                                 module: "main",
                                 function: "process_input_mappings",
-                                details: Some("publish_bool"),
+                                details: Some("generic_publish"),
                             },
-                            &anyhow!(e.to_string()),
+                            &e,
                         );
                     }
                 }
@@ -97,19 +101,32 @@ fn process_input_mappings(
                 service_name,
                 service_type,
             } if just_activated => {
-                pr_info!(
-                    logger,
-                    "Would call service: {} (type: {})",
-                    service_name,
-                    service_type
-                );
+                // For now, we just log the service call
+                // Full service support requires proper ROS service message types
+                if clients.has_service(service_name) {
+                    pr_info!(
+                        logger,
+                        "Would call service: {} (type: {})",
+                        service_name,
+                        service_type
+                    );
+                    
+                    // TODO: Implement actual service calls when std_srvs types are available
+                } else {
+                    pr_warn!(
+                        logger,
+                        "Service {} not configured in clients",
+                        service_name
+                    );
+                }
             }
             _ => {}
         }
     }
 
-    if has_twist_contribution {
-        if let Err(e) = publishers.twist_publisher.send(&twist_accumulator) {
+    // Publish all accumulated Twist messages
+    for (topic, twist) in twist_accumulators {
+        if let Err(e) = publishers.publish_twist(&topic, &twist) {
             log_error(
                 logger,
                 LogContext {
@@ -117,7 +134,7 @@ fn process_input_mappings(
                     function: "process_input_mappings",
                     details: Some("accumulated_twist"),
                 },
-                &anyhow!(e.to_string()),
+                &e,
             );
         }
     }
@@ -145,8 +162,11 @@ fn main_impl() -> Result<()> {
         .create_subscriber::<Joy>("joy", None)
         .map_err(|e| anyhow!("Failed to create joy subscriber: {:?}", e))?;
 
-    let publishers =
-        Arc::new(Publishers::from_profile(&node, &profile).context("Failed to create publishers")?);
+    let publishers = 
+        Arc::new(publishers::Publishers::from_profile(&node, &profile).context("Failed to create publishers")?);
+    
+    let clients = 
+        Arc::new(ServiceClients::from_profile(&node, &profile).context("Failed to create service clients")?);
 
     let joy_tracker = Arc::new(Mutex::new(JoyMsgTracker::new()));
     let joy_tracker_sub = Arc::clone(&joy_tracker);
@@ -179,7 +199,7 @@ fn main_impl() -> Result<()> {
             continue;
         };
         if is_enabled(&profile, &tracker) {
-            process_input_mappings(&tracker, &profile.input_mappings, &publishers, &logger)?;
+            process_input_mappings(&tracker, &profile.input_mappings, &publishers, &clients, &logger)?;
         }
     }
 }
@@ -281,8 +301,11 @@ mod tests {
         // Button 0 -> emergency stop (zero linear_x)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 0.0,  // Zero for stop
             offset: 0.0,
@@ -292,8 +315,11 @@ mod tests {
         // Button 1 -> fixed forward speed
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 0.5,  // Fixed speed
             offset: 0.0,
@@ -303,8 +329,11 @@ mod tests {
         // Button 2 -> rotate left
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(2),
-            action: ActionType::PublishTwistField {
-                field: "angular_z".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("angular.z".to_string()),
+                once: false,
             },
             scale: 1.0,
             offset: 0.0,
@@ -341,9 +370,10 @@ mod tests {
         // Axis 2 (trigger) -> publish bool when pressed beyond threshold
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(2),
-            action: ActionType::PublishBool {
+            action: ActionType::Publish {
                 topic: "/trigger/pressed".to_string(),
-                value: true,
+                message_type: "std_msgs/msg/Bool".to_string(),
+                field: None,
                 once: true,
             },
             scale: 1.0,
@@ -373,8 +403,11 @@ mod tests {
         // Axis 0 -> linear.x (forward/back)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 1.0,
             offset: 0.0,
@@ -384,8 +417,11 @@ mod tests {
         // Axis 1 -> linear.y (strafe for holonomic)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(1),
-            action: ActionType::PublishTwistField {
-                field: "linear_y".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.y".to_string()),
+                once: false,
             },
             scale: 0.8,
             offset: 0.0,
@@ -395,8 +431,11 @@ mod tests {
         // Axis 3 -> angular.z (rotation)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(3),
-            action: ActionType::PublishTwistField {
-                field: "angular_z".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("angular.z".to_string()),
+                once: false,
             },
             scale: 2.0,
             offset: 0.0,
@@ -420,8 +459,11 @@ mod tests {
         // Trigger axis that rests at 1.0 and goes to -1.0 when pressed
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(5),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: -0.5,
             offset: 0.5,
@@ -450,8 +492,11 @@ mod tests {
         // Button 0 -> forward
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 0.3,
             offset: 0.0,
@@ -461,8 +506,11 @@ mod tests {
         // Button 1 -> backward
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: -0.3,
             offset: 0.0,
@@ -472,8 +520,11 @@ mod tests {
         // Button 2 -> turn left
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(2),
-            action: ActionType::PublishTwistField {
-                field: "angular_z".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("angular.z".to_string()),
+                once: false,
             },
             scale: 0.5,
             offset: 0.0,
@@ -483,8 +534,11 @@ mod tests {
         // Button 3 -> turn right
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(3),
-            action: ActionType::PublishTwistField {
-                field: "angular_z".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("angular.z".to_string()),
+                once: false,
             },
             scale: -0.5,
             offset: 0.0,
@@ -534,13 +588,53 @@ mod tests {
         tracker.update_buttons(&[0, 0, 0, 0, 0, 1]);
         assert!(!tracker.just_pressed(5));
     }
+    
+    #[test]
+    fn test_service_clients_creation() {
+        use crate::clients::ServiceClients;
+        
+        let mappings = vec![
+            // Add a supported service (Trigger)
+            InputMapping {
+                source: InputSource::Button(0),
+                action: ActionType::CallService {
+                    service_name: "/reset_odometry".to_string(),
+                    service_type: "std_srvs/srv/Trigger".to_string(),
+                },
+                scale: 1.0,
+                offset: 0.0,
+                deadzone: 0.0,
+            },
+            // Add an unsupported service type (should be ignored)
+            InputMapping {
+                source: InputSource::Button(1),
+                action: ActionType::CallService {
+                    service_name: "/set_mode".to_string(),
+                    service_type: "custom_srvs/srv/SetMode".to_string(),
+                },
+                scale: 1.0,
+                offset: 0.0,
+                deadzone: 0.0,
+            },
+        ];
+        
+        let clients = ServiceClients::from_mappings(&mappings);
+        
+        // Check that only the Trigger service was registered
+        assert!(clients.has_service("/reset_odometry"));
+        assert!(!clients.has_service("/set_mode"));
+        assert_eq!(clients.trigger_services.len(), 1);
+    }
 
     #[test]
     fn test_deadzone_behavior() {
         let mapping = InputMapping {
             source: InputSource::Axis(0),
-            action: ActionType::PublishTwistField {
-                field: "linear_x".to_string(),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
             },
             scale: 1.0,
             offset: 0.0,
@@ -561,5 +655,49 @@ mod tests {
         
         tracker.update_axes(&[-0.5]);
         assert_eq!(mapping.process_input(&tracker), -0.5);
+    }
+    
+    #[test]
+    fn test_generic_publish_float64() {
+        let mapping = InputMapping {
+            source: InputSource::Axis(0),
+            action: ActionType::Publish {
+                topic: "/test/speed".to_string(),
+                message_type: "std_msgs/msg/Float64".to_string(),
+                field: None,
+                once: false,
+            },
+            scale: 0.5,
+            offset: 0.0,
+            deadzone: 0.0,
+        };
+        
+        let mut tracker = JoyMsgTracker::new();
+        tracker.update_axes(&[1.0]);
+        
+        // Should scale the input value
+        assert_eq!(mapping.process_value(1.0), 0.5);
+    }
+    
+    #[test]
+    fn test_generic_publish_vector3() {
+        let mapping = InputMapping {
+            source: InputSource::Button(0),
+            action: ActionType::Publish {
+                topic: "/test/vector".to_string(),
+                message_type: "geometry_msgs/msg/Vector3".to_string(),
+                field: Some("x".to_string()),
+                once: true,
+            },
+            scale: 5.0,
+            offset: 0.0,
+            deadzone: 0.0,
+        };
+        
+        let mut tracker = JoyMsgTracker::new();
+        tracker.update_buttons(&[1]);
+        
+        // Button pressed should produce scaled value
+        assert_eq!(mapping.process_value(1.0), 5.0);
     }
 }

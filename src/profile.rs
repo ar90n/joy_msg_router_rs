@@ -1,5 +1,4 @@
 use crate::config::{ActionType, InputMapping, InputSource, Profile};
-use crate::joy_msg_tracker::JoyMsgTracker;
 use anyhow::{anyhow, Result};
 use safe_drive::parameter::{ParameterServer, Value};
 
@@ -65,155 +64,6 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
         };
 
         let action = match action_type {
-            "publish_twist_field" => {
-                let field = params_guard
-                    .get_parameter(&format!("{}.field", prefix))
-                    .and_then(|p| {
-                        if let Value::String(v) = &p.value {
-                            Some(v.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| "linear_x".to_string());
-                ActionType::PublishTwistField { field }
-            }
-            "publish_bool" => {
-                let topic = params_guard
-                    .get_parameter(&format!("{}.topic", prefix))
-                    .and_then(|p| {
-                        if let Value::String(v) = &p.value {
-                            Some(v.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| format!("bool_{}", source_index));
-                let value = params_guard
-                    .get_parameter(&format!("{}.value", prefix))
-                    .and_then(|p| {
-                        if let Value::Bool(v) = p.value {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(true);
-                let once = params_guard
-                    .get_parameter(&format!("{}.once", prefix))
-                    .and_then(|p| {
-                        if let Value::Bool(v) = p.value {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(true);
-
-                ActionType::PublishBool { topic, value, once }
-            }
-            "publish_int32" => {
-                let topic = params_guard
-                    .get_parameter(&format!("{}.topic", prefix))
-                    .and_then(|p| {
-                        if let Value::String(v) = &p.value {
-                            Some(v.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| format!("int32_{}", source_index));
-                let value = params_guard
-                    .get_parameter(&format!("{}.value", prefix))
-                    .and_then(|p| {
-                        if let Value::I64(v) = p.value {
-                            Some(v as i32)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(0);
-                let once = params_guard
-                    .get_parameter(&format!("{}.once", prefix))
-                    .and_then(|p| {
-                        if let Value::Bool(v) = p.value {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(true);
-
-                ActionType::PublishInt32 { topic, value, once }
-            }
-            "publish_float64" => {
-                let topic = params_guard
-                    .get_parameter(&format!("{}.topic", prefix))
-                    .and_then(|p| {
-                        if let Value::String(v) = &p.value {
-                            Some(v.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| format!("float64_{}", source_index));
-                let value = params_guard
-                    .get_parameter(&format!("{}.value", prefix))
-                    .and_then(|p| {
-                        if let Value::F64(v) = p.value {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(0.0);
-                let once = params_guard
-                    .get_parameter(&format!("{}.once", prefix))
-                    .and_then(|p| {
-                        if let Value::Bool(v) = p.value {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(true);
-
-                ActionType::PublishFloat64 { topic, value, once }
-            }
-            "publish_string" => {
-                let topic = params_guard
-                    .get_parameter(&format!("{}.topic", prefix))
-                    .and_then(|p| {
-                        if let Value::String(v) = &p.value {
-                            Some(v.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| format!("string_{}", source_index));
-                let value = params_guard
-                    .get_parameter(&format!("{}.value", prefix))
-                    .and_then(|p| {
-                        if let Value::String(v) = &p.value {
-                            Some(v.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
-                let once = params_guard
-                    .get_parameter(&format!("{}.once", prefix))
-                    .and_then(|p| {
-                        if let Value::Bool(v) = p.value {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(true);
-
-                ActionType::PublishString { topic, value, once }
-            }
             "call_service" => {
                 let service_name = params_guard
                     .get_parameter(&format!("{}.service_name", prefix))
@@ -238,6 +88,53 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
                 ActionType::CallService {
                     service_name,
                     service_type,
+                }
+            }
+            "publish" => {
+                let topic = params_guard
+                    .get_parameter(&format!("{}.topic", prefix))
+                    .and_then(|p| {
+                        if let Value::String(v) = &p.value {
+                            Some(v.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| anyhow!("Missing topic for publish"))?;
+                let message_type = params_guard
+                    .get_parameter(&format!("{}.message_type", prefix))
+                    .and_then(|p| {
+                        if let Value::String(v) = &p.value {
+                            Some(v.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| anyhow!("Missing message_type for publish"))?;
+                let field = params_guard
+                    .get_parameter(&format!("{}.field", prefix))
+                    .and_then(|p| {
+                        if let Value::String(v) = &p.value {
+                            Some(v.clone())
+                        } else {
+                            None
+                        }
+                    });
+                let once = params_guard
+                    .get_parameter(&format!("{}.once", prefix))
+                    .and_then(|p| {
+                        if let Value::Bool(v) = p.value {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(true);
+                ActionType::Publish {
+                    topic,
+                    message_type,
+                    field,
+                    once,
                 }
             }
             _ => continue,

@@ -105,18 +105,20 @@ joy_msg_router:
 
 ### Supported Action Types
 
-1. **publish_twist_field**: Publish to a specific field of the Twist message
-   - `field`: One of "linear_x", "linear_y", "linear_z", "angular_x", "angular_y", "angular_z"
-   - Works with both axes (scaled values) and buttons (fixed values)
-
-2. **publish_bool**: Publish boolean messages
+1. **publish**: Publish any supported ROS message type
    - `topic`: Target topic name
-   - `value`: Boolean value to publish
+   - `message_type`: Full ROS message type (e.g., "std_msgs/msg/Float64", "geometry_msgs/msg/Twist")
+   - `field`: Optional field name for multi-field messages (e.g., "x" for Vector3, "linear.x" for Twist)
    - `once`: If true, publish only on activation; if false, publish continuously while active
+   - Supported types:
+     - `std_msgs/msg/Bool`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `String`
+     - `geometry_msgs/msg/Twist`, `Vector3`
+   - Note: For Twist messages, values are accumulated from all active mappings before publishing
 
-3. **call_service**: Call a ROS service
+2. **call_service**: Call a ROS service (button only)
    - `service_name`: Name of the service to call
-   - `service_type`: Service type (e.g., "std_srvs/srv/Trigger")
+   - `service_type`: Service type (currently only "std_srvs/srv/Trigger" is supported)
+   - Services are called when the button is pressed
 
 ### Input Processing
 
@@ -147,6 +149,12 @@ See `config/examples/xbox_controller.yaml`
 
 ### Custom Parameter File
 See `config/params_example.yaml`
+
+### Service Calls Example
+See `config/examples/service_calls.yaml` for examples of mapping buttons to service calls
+
+### Generic Message Types Example
+See `config/examples/generic_messages.yaml` for examples of publishing different message types
 
 ## Development
 

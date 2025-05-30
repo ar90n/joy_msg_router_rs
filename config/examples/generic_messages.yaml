@@ -1,0 +1,99 @@
+# Example configuration demonstrating generic message type publishing
+# This shows how to publish different ROS message types based on joystick input
+
+joy_msg_router:
+  ros__parameters:
+    profile_name: "generic_messages_example"
+    
+    input_mappings:
+      # Publish Float64 from left stick Y axis
+      - source:
+          type: "axis"
+          index: 1  # Left stick Y
+        action:
+          type: "publish"
+          topic: "/robot/speed"
+          message_type: "std_msgs/msg/Float64"
+          # field is optional for single-field messages like Float64
+        scale: 2.0    # Max speed 2.0 m/s
+        offset: 0.0
+        deadzone: 0.1
+      
+      # Publish Int32 from right trigger
+      - source:
+          type: "axis"
+          index: 5  # Right trigger (0-1 range)
+        action:
+          type: "publish"
+          topic: "/robot/power_level"
+          message_type: "std_msgs/msg/Int32"
+        scale: 100.0  # Convert 0-1 to 0-100
+        offset: 0.0
+        deadzone: 0.05
+      
+      # Publish Vector3 for position control
+      - source:
+          type: "axis"
+          index: 0  # Left stick X
+        action:
+          type: "publish"
+          topic: "/robot/target_position"
+          message_type: "geometry_msgs/msg/Vector3"
+          field: "x"  # Specify which field to set
+        scale: 5.0   # 5 meter range
+        offset: 0.0
+        deadzone: 0.1
+      
+      - source:
+          type: "axis"
+          index: 1  # Left stick Y
+        action:
+          type: "publish"
+          topic: "/robot/target_position"
+          message_type: "geometry_msgs/msg/Vector3"
+          field: "y"
+        scale: 5.0
+        offset: 0.0
+        deadzone: 0.1
+      
+      # Publish Bool from button
+      - source:
+          type: "button"
+          index: 0  # X button
+        action:
+          type: "publish"
+          topic: "/robot/emergency_stop"
+          message_type: "std_msgs/msg/Bool"
+          once: true  # Only publish on press, not continuously
+      
+      # Publish String (button index as string)
+      - source:
+          type: "button"
+          index: 1  # Circle button
+        action:
+          type: "publish"
+          topic: "/robot/mode"
+          message_type: "std_msgs/msg/String"
+          once: true
+      
+      # Still support traditional Twist publishing
+      - source:
+          type: "axis"
+          index: 3  # Right stick X
+        action:
+          type: "publish_twist_field"
+          field: "angular_z"
+        scale: 1.57  # ~90 deg/s max rotation
+        offset: 0.0
+        deadzone: 0.1
+
+# Supported message types:
+# - std_msgs/msg/Bool
+# - std_msgs/msg/Int16
+# - std_msgs/msg/Int32
+# - std_msgs/msg/Int64
+# - std_msgs/msg/Float32
+# - std_msgs/msg/Float64
+# - std_msgs/msg/String
+# - geometry_msgs/msg/Twist
+# - geometry_msgs/msg/Vector3
