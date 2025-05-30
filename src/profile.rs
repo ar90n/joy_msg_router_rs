@@ -74,7 +74,7 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
                             None
                         }
                     })
-                    .unwrap_or_else(|| format!("/service_{}", source_index));
+                    .ok_or_else(|| anyhow!("Missing service_name for call_service"))?;
                 let service_type = params_guard
                     .get_parameter(&format!("{}.service_type", prefix))
                     .and_then(|p| {
@@ -84,7 +84,7 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
                             None
                         }
                     })
-                    .unwrap_or_else(|| "std_srvs/srv/Trigger".to_string());
+                    .ok_or_else(|| anyhow!("Missing service_type for call_service"))?;
                 ActionType::CallService {
                     service_name,
                     service_type,
