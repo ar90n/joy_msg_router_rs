@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         apt-get update
-        apt-get install -y curl build-essential
+        apt-get install -y curl build-essential git
     
     - name: Install Rust
       run: |

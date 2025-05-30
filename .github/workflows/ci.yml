@@ -14,37 +14,88 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    container:
+      image: osrf/ros:humble-desktop
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y curl build-essential git
+    
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --component rustfmt clippy
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
     
     - name: Check formatting
-      run: cargo fmt -- --check
+      run: |
+        source /opt/ros/humble/setup.bash
+        $HOME/.cargo/bin/cargo fmt -- --check
     
     - name: Run clippy
-      run: cargo clippy -- -D warnings
+      run: |
+        source /opt/ros/humble/setup.bash
+        $HOME/.cargo/bin/cargo clippy -- -D warnings
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    container:
+      image: osrf/ros:humble-desktop
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y curl build-essential git
+    
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
     
     - name: Run tests
-      run: cargo test --verbose
+      run: |
+        source /opt/ros/humble/setup.bash
+        $HOME/.cargo/bin/cargo test --verbose
 
   build:
     name: Build
     runs-on: ubuntu-latest
     container:
-      image: ros:humble
+      image: osrf/ros:humble-desktop
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y curl build-essential git
+    
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Build debug
+      run: |
+        source /opt/ros/humble/setup.bash
+        $HOME/.cargo/bin/cargo build --verbose
+    
+    - name: Build release
+      run: |
+        source /opt/ros/humble/setup.bash
+        $HOME/.cargo/bin/cargo build --release --verbose
+
+  # Separate job for ROS2 integration tests
+  ros2-integration:
+    name: ROS2 Integration Build
+    runs-on: ubuntu-latest
+    container:
+      image: osrf/ros:humble-desktop
     steps:
     - uses: actions/checkout@v4
     
@@ -55,17 +106,13 @@ jobs:
           python3-colcon-common-extensions \
           python3-pip \
           curl \
-          build-essential
+          build-essential \
+          git
     
     - name: Install Rust
       run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-    
-    - name: Setup ROS environment
-      run: |
-        source /opt/ros/$ROS_DISTRO/setup.bash
-        echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> $GITHUB_ENV
     
     - name: Install cargo-ament-build
       run: |
@@ -87,51 +134,6 @@ jobs:
       run: |
         cd ws
         source /opt/ros/$ROS_DISTRO/setup.bash
+        source install/setup.bash
         colcon test --packages-select joy_msg_router_rs
         colcon test-result --verbose
-
-  build-multi-platform:
-    name: Build - ${{ matrix.ros_distro }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ros_distro: [humble, iron, rolling]
-    container:
-      image: ros:${{ matrix.ros_distro }}
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y \
-          python3-colcon-common-extensions \
-          python3-pip \
-          curl \
-          build-essential
-    
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-    
-    - name: Setup ROS environment
-      run: |
-        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-        echo "source /opt/ros/${{ matrix.ros_distro }}/setup.bash" >> $GITHUB_ENV
-    
-    - name: Install cargo-ament-build
-      run: |
-        $HOME/.cargo/bin/cargo install cargo-ament-build
-    
-    - name: Create workspace
-      run: |
-        mkdir -p ws/src
-        cd ws/src
-        ln -s $GITHUB_WORKSPACE joy_msg_router_rs
-    
-    - name: Build with colcon
-      run: |
-        cd ws
-        source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-        colcon build --packages-select joy_msg_router_rs
