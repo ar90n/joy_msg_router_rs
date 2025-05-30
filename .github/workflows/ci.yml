@@ -69,14 +69,13 @@ jobs:
     
     - name: Install cargo-ament-build
       run: |
-        cd tools/cargo-ament-build
-        $HOME/.cargo/bin/cargo install --path .
+        $HOME/.cargo/bin/cargo install cargo-ament-build
     
     - name: Create workspace
       run: |
         mkdir -p ws/src
         cd ws/src
-        ln -s $GITHUB_WORKSPACE .
+        ln -s $GITHUB_WORKSPACE joy_msg_router_rs
     
     - name: Build with colcon
       run: |
@@ -123,14 +122,13 @@ jobs:
     
     - name: Install cargo-ament-build
       run: |
-        cd tools/cargo-ament-build
-        $HOME/.cargo/bin/cargo install --path .
+        $HOME/.cargo/bin/cargo install cargo-ament-build
     
     - name: Create workspace
       run: |
         mkdir -p ws/src
         cd ws/src
-        ln -s $GITHUB_WORKSPACE .
+        ln -s $GITHUB_WORKSPACE joy_msg_router_rs
     
     - name: Build with colcon
       run: |

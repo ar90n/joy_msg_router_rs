@@ -50,8 +50,7 @@ jobs:
     
     - name: Install cargo-ament-build
       run: |
-        cd tools/cargo-ament-build
-        $HOME/.cargo/bin/cargo install --path .
+        $HOME/.cargo/bin/cargo install cargo-ament-build
     
     - name: Get version
       id: get_version
@@ -68,7 +67,7 @@ jobs:
         # Create workspace
         mkdir -p ws/src
         cd ws/src
-        ln -s $GITHUB_WORKSPACE .
+        ln -s $GITHUB_WORKSPACE joy_msg_router_rs
         cd ..
         
         # Build
@@ -91,7 +90,7 @@ jobs:
         Priority: optional
         Architecture: amd64
         Depends: ros-${{ matrix.ros_distro }}-ros-base, ros-${{ matrix.ros_distro }}-joy
-        Maintainer: Your Name <your.email@example.com>
+        Maintainer: Your Name <noreply@anthropic.com>
         Description: ROS2 Joy Message Router
          A ROS2 node written in Rust that routes joystick messages to robot control commands.
         EOF
