@@ -4,18 +4,13 @@ use std::collections::HashMap;
 /// Tracks joy message states (axes and buttons) and detects press/release events
 #[derive(Debug, Clone)]
 pub struct JoyMsgTracker {
-    /// Previous frame button states
     previous_button_states: HashMap<usize, bool>,
-    /// Current frame button states
     current_button_states: HashMap<usize, bool>,
-    /// Current axes values
     current_axes: Vec<f32>,
-    /// Previous axes values
     previous_axes: Vec<f32>,
 }
 
 impl JoyMsgTracker {
-    /// Create a new joy message tracker
     pub fn new() -> Self {
         Self {
             previous_button_states: HashMap::new(),
@@ -25,35 +20,22 @@ impl JoyMsgTracker {
         }
     }
 
-    /// Update states from a Joy message
     pub fn update(&mut self, joy_msg: &Joy) {
-        // Update button states
         self.update_buttons(joy_msg.buttons.as_slice());
-
-        // Update axes states
         self.update_axes(joy_msg.axes.as_slice());
     }
 
-    /// Update only button states from button array
     pub fn update_buttons(&mut self, buttons: &[i32]) {
-        // Move current to previous
         self.previous_button_states = self.current_button_states.clone();
 
-        // Clear current states
         self.current_button_states.clear();
-
-        // Update current states from button array
         for (index, &value) in buttons.iter().enumerate() {
             self.current_button_states.insert(index, value != 0);
         }
     }
 
-    /// Update only axes states from axes array
     pub fn update_axes(&mut self, axes: &[f32]) {
-        // Move current to previous
         self.previous_axes = self.current_axes.clone();
-
-        // Update current axes
         self.current_axes = axes.to_vec();
     }
 
@@ -64,11 +46,19 @@ impl JoyMsgTracker {
 
     /// Get a specific axis value
     pub fn get_axis(&self, axis_index: usize) -> Option<f32> {
+        if self.current_axes.len() <= axis_index {
+            return None; // Out of bounds
+        }
+
         self.current_axes.get(axis_index).copied()
     }
 
     /// Check if a button is currently pressed
     pub fn is_pressed(&self, button_index: usize) -> bool {
+        if self.current_button_states.len() <= button_index {
+            return false; // Out of bounds
+        }
+
         self.current_button_states
             .get(&button_index)
             .copied()
@@ -77,6 +67,10 @@ impl JoyMsgTracker {
 
     /// Check if a button was just pressed (rising edge)
     pub fn just_pressed(&self, button_index: usize) -> bool {
+        if self.current_button_states.len() <= button_index {
+            return false; // Out of bounds
+        }
+
         let was_pressed = self
             .previous_button_states
             .get(&button_index)
@@ -92,6 +86,10 @@ impl JoyMsgTracker {
 
     /// Check if a button was just released (falling edge)
     pub fn just_released(&self, button_index: usize) -> bool {
+        if self.current_button_states.len() <= button_index {
+            return false; // Out of bounds
+        }
+
         let was_pressed = self
             .previous_button_states
             .get(&button_index)
@@ -107,6 +105,10 @@ impl JoyMsgTracker {
 
     /// Check if a button is being held (was pressed and still is)
     pub fn is_held(&self, button_index: usize) -> bool {
+        if self.current_button_states.len() <= button_index {
+            return false; // Out of bounds
+        }
+
         let was_pressed = self
             .previous_button_states
             .get(&button_index)

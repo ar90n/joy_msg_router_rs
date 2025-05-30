@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use geometry_msgs::msg::Twist;
 use sensor_msgs::msg::Joy;
-use std_msgs::msg::{Bool, Float64, Int32, String as StringMsg};
+use std_msgs::msg::Bool;
 
 mod config;
 mod joy_msg_tracker;
@@ -32,8 +32,7 @@ fn process_input_mappings(
     publishers: &Publishers,
     logger: &Logger,
 ) -> Result<()> {
-    let mut twist_accumulator = Twist::new()
-        .ok_or_else(|| anyhow!("Failed to create Twist message"))?;
+    let mut twist_accumulator = Twist::new().context("Failed to create Twist message")?;
     let mut has_twist_contribution = false;
 
     for mapping in input_mappings {
@@ -51,131 +50,50 @@ fn process_input_mappings(
             }
         };
 
+        if !is_active {
+            continue; // Skip inactive mappings
+        }
+
         match &mapping.action {
             ActionType::PublishTwistField { field } => {
-                if is_active {
-                    match field {
-                        OutputField::LinearX => twist_accumulator.linear.x += input_value,
-                        OutputField::LinearY => twist_accumulator.linear.y += input_value,
-                        OutputField::LinearZ => twist_accumulator.linear.z += input_value,
-                        OutputField::AngularX => twist_accumulator.angular.x += input_value,
-                        OutputField::AngularY => twist_accumulator.angular.y += input_value,
-                        OutputField::AngularZ => twist_accumulator.angular.z += input_value,
-                    }
-                    has_twist_contribution = true;
+                match field {
+                    OutputField::LinearX => twist_accumulator.linear.x += input_value,
+                    OutputField::LinearY => twist_accumulator.linear.y += input_value,
+                    OutputField::LinearZ => twist_accumulator.linear.z += input_value,
+                    OutputField::AngularX => twist_accumulator.angular.x += input_value,
+                    OutputField::AngularY => twist_accumulator.angular.y += input_value,
+                    OutputField::AngularZ => twist_accumulator.angular.z += input_value,
                 }
+                has_twist_contribution = true;
             }
-            ActionType::PublishBool { topic, value, once } => {
-                if (*once && just_activated) || (!*once && is_active) {
-                    if let Some(mut bool_msg) = Bool::new() {
-                        bool_msg.data = *value;
-                        if let Some(publisher) = publishers.bool_publishers.get(topic) {
-                            if let Err(e) = publisher.send(&bool_msg) {
-                                log_error(
-                                    logger,
-                                    LogContext {
-                                        module: "main",
-                                        function: "process_input_mappings",
-                                        details: Some("publish_bool"),
-                                    },
-                                    &anyhow!(e.to_string()),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            ActionType::PublishInt32 { topic, value, once } => {
-                if (*once && just_activated) || (!*once && is_active) {
-                    if let Some(mut int_msg) = Int32::new() {
-                        int_msg.data = *value;
-                        if let Some(publisher) = publishers.int32_publishers.get(topic) {
-                            if let Err(e) = publisher.send(&int_msg) {
-                                log_error(
-                                    logger,
-                                    LogContext {
-                                        module: "main",
-                                        function: "process_input_mappings",
-                                        details: Some("publish_int32"),
-                                    },
-                                    &anyhow!(e.to_string()),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            ActionType::PublishFloat64 { topic, value, once } => {
-                if (*once && just_activated) || (!*once && is_active) {
-                    if let Some(mut float_msg) = Float64::new() {
-                        float_msg.data = *value;
-                        if let Some(publisher) = publishers.float64_publishers.get(topic) {
-                            if let Err(e) = publisher.send(&float_msg) {
-                                log_error(
-                                    logger,
-                                    LogContext {
-                                        module: "main",
-                                        function: "process_input_mappings",
-                                        details: Some("publish_float64"),
-                                    },
-                                    &anyhow!(e.to_string()),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            ActionType::PublishString { topic, value, once } => {
-                if (*once && just_activated) || (!*once && is_active) {
-                    if let Some(mut str_msg) = StringMsg::new() {
-                        if let Some(data_ros) = safe_drive::msg::RosString::<0>::new(value) {
-                            str_msg.data = data_ros;
-                            if let Some(publisher) = publishers.string_publishers.get(topic) {
-                                if let Err(e) = publisher.send(&str_msg) {
-                                    log_error(
-                                        logger,
-                                        LogContext {
-                                            module: "main",
-                                            function: "process_input_mappings",
-                                            details: Some("publish_string"),
-                                        },
-                                        &anyhow!(e.to_string()),
-                                    );
-                                }
-                            }
-                        }
+            ActionType::PublishBool { topic, value, once } if (*once && just_activated) || (!*once)  => {
+                let bool_msg = Bool::new()
+                    .map(|mut bool_msg| {bool_msg.data = *value; bool_msg})
+                    .context("Failed to create Bool message")?;
+
+                if let Some(publisher) = publishers.bool_publishers.get(topic) {
+                    if let Err(e) = publisher.send(&bool_msg) {
+                        log_error(
+                            logger,
+                            LogContext {
+                                module: "main",
+                                function: "process_input_mappings",
+                                details: Some("publish_bool"),
+                            },
+                            &anyhow!(e.to_string()),
+                        );
                     }
                 }
             }
             ActionType::CallService {
                 service_name,
                 service_type,
-                once,
-            } => {
-                if (*once && just_activated) || (!*once && is_active) {
-                    pr_info!(
-                        logger,
-                        "Would call service: {} (type: {})",
-                        service_name, service_type
-                    );
-                }
-            }
-            ActionType::NoAction => {
-                if just_activated {
-                    if let Some(zero_twist) = Twist::new() {
-                        if let Err(e) = publishers.twist_publisher.send(&zero_twist) {
-                            log_error(
-                                logger,
-                                LogContext {
-                                    module: "main",
-                                    function: "process_input_mappings",
-                                    details: Some("stop"),
-                                },
-                                &anyhow!(e.to_string()),
-                            );
-                        }
-                    }
-                }
+            } if just_activated => {
+                pr_info!(
+                    logger,
+                    "Would call service: {} (type: {})",
+                    service_name, service_type
+                );
             }
             _ => {}
         }
@@ -363,17 +281,17 @@ mod tests {
             tracker_guard.update_buttons(&[0, 0, 1, 0]);
         }
 
-        // Test multiple enable buttons (OR logic)
-        profile.enable_buttons = Some(vec![0, 1, 2]);
+        // Test single enable button with different indices
+        profile.enable_button = Some(2);
         {
             let tracker_guard = tracker.lock().unwrap();
             assert!(is_enabled(&profile, &tracker_guard)); // Button 2 is pressed
         }
 
-        profile.enable_buttons = Some(vec![0, 1]);
+        profile.enable_button = Some(0);
         {
             let tracker_guard = tracker.lock().unwrap();
-            assert!(!is_enabled(&profile, &tracker_guard)); // Neither 0 nor 1 pressed
+            assert!(!is_enabled(&profile, &tracker_guard)); // Button 0 not pressed
         }
     }
 }

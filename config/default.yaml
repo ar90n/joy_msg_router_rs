@@ -8,130 +8,124 @@ default_profile: "teleop"
 profiles:
   # Teleoperation profile for robot movement
   teleop:
-    # Optional: Button that must be held to enable output (-1 or omit for always enabled)
-    enable_button: -1
-    
-    # Axis mappings for converting joy axes to twist fields
-    axis_mappings:
+    # Unified input mappings for both axes and buttons
+    input_mappings:
       # Forward/backward movement (left stick Y-axis)
-      - joy_axis: 1
-        output_field: linear_x  # Options: linear_x, linear_y, linear_z, angular_x, angular_y, angular_z
+      - source_type: axis
+        source_index: 1
         scale: 0.5              # Maximum output value (m/s for linear, rad/s for angular)
         offset: 0.0             # Offset added after scaling
         deadzone: 0.1           # Values below this threshold are treated as zero
+        action:
+          type: publish_twist_field
+          field: linear_x       # Options: linear_x, linear_y, linear_z, angular_x, angular_y, angular_z
       
       # Rotation (right stick X-axis)
-      - joy_axis: 3
-        output_field: angular_z
+      - source_type: axis
+        source_index: 3
         scale: 1.0
         offset: 0.0
         deadzone: 0.1
-    
-    # Button mappings for discrete actions
-    button_mappings:
-      # X button - emergency stop
-      - button: 0
         action:
-          type: publish_twist
-          linear_x: 0.0
-          linear_y: 0.0
-          linear_z: 0.0
-          angular_x: 0.0
-          angular_y: 0.0
-          angular_z: 0.0
+          type: publish_twist_field
+          field: angular_z
+    
+      # X button - emergency stop (publishes zero twist)
+      - source_type: button
+        source_index: 0
+        action:
+          type: publish_twist_field
+          field: linear_x
+        scale: 0.0    # Zero output for emergency stop
+        offset: 0.0
+        deadzone: 0.0
 
   # Safe teleoperation with deadman switch
   teleop_safe:
     # L1 button (4) must be held to enable movement
     enable_button: 4
-    # Alternative: multiple enable buttons (any can be pressed)
-    # enable_buttons: [4, 5]  # L1 or R1
     
-    axis_mappings:
+    input_mappings:
       # Same as teleop but with reduced speeds
-      - joy_axis: 1
-        output_field: linear_x
+      - source_type: axis
+        source_index: 1
         scale: 0.3        # Reduced max speed for safety
         offset: 0.0
         deadzone: 0.1
+        action:
+          type: publish_twist_field
+          field: linear_x
       
-      - joy_axis: 3
-        output_field: angular_z
+      - source_type: axis
+        source_index: 3
         scale: 0.5        # Reduced rotation speed
         offset: 0.0
         deadzone: 0.1
+        action:
+          type: publish_twist_field
+          field: angular_z
     
-    button_mappings:
       # Triangle button - call service to change mode
-      - button: 2
+      - source_type: button
+        source_index: 2
         action:
           type: call_service
           service_name: "/set_navigation_mode"
           service_type: "std_srvs/srv/SetBool"
       
       # Circle button - trigger a custom action
-      - button: 1
+      - source_type: button
+        source_index: 1
         action:
           type: call_service
           service_name: "/trigger_action"
           service_type: "std_srvs/srv/Trigger"
 
-  # Holonomic robot profile (can move sideways)
-  holonomic:
-    enable_button: -1
-    
-    axis_mappings:
-      # Forward/backward (left stick Y)
-      - joy_axis: 1
-        output_field: linear_x
-        scale: 0.5
-        offset: 0.0
-        deadzone: 0.1
-      
-      # Left/right strafe (left stick X)
-      - joy_axis: 0
-        output_field: linear_y
-        scale: 0.5
-        offset: 0.0
-        deadzone: 0.1
-      
-      # Rotation (right stick X)
-      - joy_axis: 3
-        output_field: angular_z
+  # Example profile with multiple output types
+  multi_output:
+    input_mappings:
+      # Axis to twist field
+      - source_type: axis
+        source_index: 0
         scale: 1.0
         offset: 0.0
-        deadzone: 0.1
-
-  # Drone/UAV control profile
-  drone:
-    # Multiple safety buttons - either L1 or R1 must be held
-    enable_buttons: [4, 5]  # L1 or R1 for safety
-    
-    axis_mappings:
-      # Forward/backward (left stick Y)
-      - joy_axis: 1
-        output_field: linear_x
-        scale: 2.0        # Higher speed for drone
-        offset: 0.0
-        deadzone: 0.1
+        deadzone: 0.05
+        action:
+          type: publish_twist_field
+          field: linear_x
       
-      # Left/right (left stick X)
-      - joy_axis: 0
-        output_field: linear_y
-        scale: 2.0
-        offset: 0.0
-        deadzone: 0.1
+      # Button to boolean message
+      - source_type: button
+        source_index: 5
+        action:
+          type: publish_bool
+          topic: "/lights/enable"
+          value: true
+          once: true    # Publish only on button press, not continuously
       
-      # Up/down (right stick Y)
-      - joy_axis: 4
-        output_field: linear_z
-        scale: 1.0
-        offset: 0.0
-        deadzone: 0.1
+      # Button to integer message
+      - source_type: button
+        source_index: 6
+        action:
+          type: publish_int32
+          topic: "/mode/select"
+          value: 1
+          once: true
       
-      # Yaw rotation (right stick X)
-      - joy_axis: 3
-        output_field: angular_z
-        scale: 1.5
-        offset: 0.0
-        deadzone: 0.1
+      # Button to float message
+      - source_type: button
+        source_index: 7
+        action:
+          type: publish_float64
+          topic: "/speed/multiplier"
+          value: 2.0
+          once: false   # Publish continuously while pressed
+      
+      # Button to string message
+      - source_type: button
+        source_index: 8
+        action:
+          type: publish_string
+          topic: "/status/message"
+          value: "Emergency Stop Activated"
+          once: true

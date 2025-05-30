@@ -1,0 +1,57 @@
+# Example of unified input mappings
+# This demonstrates how axes and buttons are treated uniformly
+
+profiles:
+  # Example showing axes and buttons can perform similar actions
+  unified_example:
+    enable_button: 6  # R1 button as safety switch
+    
+    input_mappings:
+      # Axis controlling forward speed
+      - source_type: axis
+        source_index: 1
+        scale: 1.0
+        deadzone: 0.1
+        action:
+          type: publish_twist_field
+          field: linear_x
+      
+      # Button also contributing to forward speed (turbo boost)
+      - source_type: button
+        source_index: 0  # X button
+        scale: 0.5       # Add 0.5 m/s when pressed
+        action:
+          type: publish_twist_field
+          field: linear_x
+      
+      # Another button for reverse
+      - source_type: button
+        source_index: 1  # Circle button
+        scale: -0.3      # Negative speed for reverse
+        action:
+          type: publish_twist_field
+          field: linear_x
+      
+      # Axis for rotation
+      - source_type: axis
+        source_index: 3
+        scale: 2.0
+        deadzone: 0.15
+        action:
+          type: publish_twist_field
+          field: angular_z
+      
+      # Buttons for discrete rotation
+      - source_type: button
+        source_index: 4  # L1 - rotate left
+        scale: -1.0
+        action:
+          type: publish_twist_field
+          field: angular_z
+      
+      - source_type: button
+        source_index: 5  # R1 - rotate right
+        scale: 1.0
+        action:
+          type: publish_twist_field
+          field: angular_z

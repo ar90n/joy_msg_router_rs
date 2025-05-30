@@ -10,9 +10,6 @@ pub struct Profile {
     /// Optional button index that must be pressed to enable output
     pub enable_button: Option<usize>,
 
-    /// Optional list of button indices (any must be pressed to enable)
-    pub enable_buttons: Option<Vec<usize>>,
-
     /// Input mappings (both axes and buttons)
     pub input_mappings: Vec<InputMapping>,
 }
@@ -148,13 +145,7 @@ pub enum ActionType {
     CallService {
         service_name: String,
         service_type: String,
-        /// Whether to call only once (true) or continuously while active (false)
-        #[serde(default)]
-        once: bool,
     },
-
-    /// No action (stop)
-    NoAction,
 }
 
 fn default_true() -> bool {
@@ -167,7 +158,6 @@ impl Profile {
         Self {
             name,
             enable_button: None,
-            enable_buttons: None,
             input_mappings: Vec::new(),
         }
     }
@@ -353,7 +343,6 @@ mod tests {
             action: ActionType::CallService {
                 service_name: "test".to_string(),
                 service_type: "std_srvs/Trigger".to_string(),
-                once: true,
             },
             scale: 1.0,
             offset: 0.0,

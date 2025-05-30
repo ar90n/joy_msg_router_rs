@@ -5,37 +5,21 @@ use safe_drive::parameter::{ParameterServer, Value};
 
 pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
     let params_guard = params.params.read();
-    
-    let profile_name = match params_guard.get_parameter("profile_name") {
-        Some(param) => match &param.value {
-            Value::String(s) => s.clone(),
-            _ => return Err(anyhow!("profile_name must be a string")),
-        },
-        None => return Err(anyhow!("profile_name parameter not found")),
-    };
-    
+
+    let profile_name = params_guard.get_parameter("profile_name")
+        .ok_or_else(|| anyhow!("profile_name parameter not found"))
+        .and_then(|param| match &param.value {
+            Value::String(s) => Ok(s.clone()),
+            _ => Err(anyhow!("profile_name must be a string")),
+        })?;
+
     let mut profile = Profile::new(profile_name);
-    
-    if let Some(param) = params_guard.get_parameter("enable_button") {
-        if let Value::I64(button) = param.value {
-            if button >= 0 {
-                profile.enable_button = Some(button as usize);
-            }
-        }
-    }
-    
-    if let Some(param) = params_guard.get_parameter("enable_buttons") {
-        if let Value::VecI64(buttons) = &param.value {
-            let button_vec: Vec<usize> = buttons
-                .iter()
-                .filter_map(|&b| if b >= 0 { Some(b as usize) } else { None })
-                .collect();
-            if !button_vec.is_empty() {
-                profile.enable_buttons = Some(button_vec);
-            }
-        }
-    }
-    
+    profile.enable_button = params_guard.get_parameter("enable_button")
+        .and_then(|param| match param.value {
+            Value::I64(v) if 0 <= v => Some(v as usize),
+            _ => None,
+        });
+
     let mut mapping_idx = 0;
     loop {
         let prefix = format!("input_mappings.{}", mapping_idx);
@@ -156,18 +140,11 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
                     .get_parameter(&format!("{}.service_type", prefix))
                     .and_then(|p| if let Value::String(v) = &p.value { Some(v.clone()) } else { None })
                     .unwrap_or_else(|| "std_srvs/srv/Trigger".to_string());
-                let once = params_guard
-                    .get_parameter(&format!("{}.once", prefix))
-                    .and_then(|p| if let Value::Bool(v) = p.value { Some(v) } else { None })
-                    .unwrap_or(true);
-                    
                 ActionType::CallService {
                     service_name,
                     service_type,
-                    once,
                 }
             }
-            "no_action" => ActionType::NoAction,
             _ => continue,
         };
         
@@ -202,19 +179,9 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
 
 pub fn is_enabled(profile: &Profile, joy_tracker: &JoyMsgTracker) -> bool {
     if let Some(button) = profile.enable_button {
-        if button >= joy_tracker.button_count() || !joy_tracker.is_pressed(button) {
-            return false;
-        }
+        return joy_tracker.is_pressed(button);
     }
-    
-    if let Some(ref buttons) = profile.enable_buttons {
-        let any_pressed = buttons
-            .iter()
-            .any(|&button| button < joy_tracker.button_count() && joy_tracker.is_pressed(button));
-        if !any_pressed {
-            return false;
-        }
-    }
-    
+
+    // If no enable button is set, profile is enabled by default
     true
 }
