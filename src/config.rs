@@ -54,32 +54,6 @@ fn default_deadzone() -> f64 {
     0.1
 }
 
-/// Enum representing different output fields for Twist messages
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputField {
-    LinearX,
-    LinearY,
-    LinearZ,
-    AngularX,
-    AngularY,
-    AngularZ,
-}
-
-impl OutputField {
-    /// Parse from string representation
-    pub fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "linear_x" => Ok(OutputField::LinearX),
-            "linear_y" => Ok(OutputField::LinearY),
-            "linear_z" => Ok(OutputField::LinearZ),
-            "angular_x" => Ok(OutputField::AngularX),
-            "angular_y" => Ok(OutputField::AngularY),
-            "angular_z" => Ok(OutputField::AngularZ),
-            _ => Err(anyhow!(format!("Invalid output field: '{}'. Expected one of: linear_x, linear_y, linear_z, angular_x, angular_y, angular_z", s)))
-        }
-    }
-}
 
 /// Enum representing different action types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,8 +61,8 @@ impl OutputField {
 pub enum ActionType {
     /// Publish to a Twist field
     PublishTwistField {
-        /// Which field to publish to
-        field: OutputField,
+        /// Which field to publish to ("linear_x", "linear_y", "linear_z", "angular_x", "angular_y", "angular_z")
+        field: String,
     },
 
 
@@ -216,7 +190,7 @@ mod tests {
         let mapping = InputMapping {
             source: InputSource::Axis(0),
             action: ActionType::PublishTwistField {
-                field: OutputField::LinearX,
+                field: "linear_x".to_string(),
             },
             scale: 2.0,
             offset: 0.5,
@@ -255,7 +229,7 @@ mod tests {
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
             action: ActionType::PublishTwistField {
-                field: OutputField::LinearX,
+                field: "linear_x".to_string(),
             },
             scale: 1.0,
             offset: 0.0,
@@ -265,7 +239,7 @@ mod tests {
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
             action: ActionType::PublishTwistField {
-                field: OutputField::AngularZ,
+                field: "angular_z".to_string(),
             },
             scale: 1.0,
             offset: 0.0,
@@ -282,7 +256,7 @@ mod tests {
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
             action: ActionType::PublishTwistField {
-                field: OutputField::LinearX,
+                field: "linear_x".to_string(),
             },
             scale: 1.0,
             offset: 0.0,
@@ -299,7 +273,7 @@ mod tests {
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
             action: ActionType::PublishTwistField {
-                field: OutputField::LinearX,
+                field: "linear_x".to_string(),
             },
             scale: 0.0,
             offset: 0.0,

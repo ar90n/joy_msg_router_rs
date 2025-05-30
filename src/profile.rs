@@ -1,4 +1,4 @@
-use crate::config::{ActionType, InputMapping, InputSource, OutputField, Profile};
+use crate::config::{ActionType, InputMapping, InputSource, Profile};
 use crate::joy_msg_tracker::JoyMsgTracker;
 use anyhow::{Result, anyhow};
 use safe_drive::parameter::{ParameterServer, Value};
@@ -60,11 +60,10 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
         
         let action = match action_type {
             "publish_twist_field" => {
-                let field_str = params_guard
+                let field = params_guard
                     .get_parameter(&format!("{}.field", prefix))
-                    .and_then(|p| if let Value::String(v) = &p.value { Some(v.as_str()) } else { None })
-                    .unwrap_or("linear_x");
-                let field = OutputField::from_str(field_str)?;
+                    .and_then(|p| if let Value::String(v) = &p.value { Some(v.clone()) } else { None })
+                    .unwrap_or_else(|| "linear_x".to_string());
                 ActionType::PublishTwistField { field }
             }
             "publish_bool" => {

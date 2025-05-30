@@ -14,7 +14,7 @@ mod profile;
 mod publishers;
 
 use anyhow::{Result, anyhow};
-use config::{ActionType, InputMapping, InputSource, OutputField};
+use config::{ActionType, InputMapping, InputSource};
 use joy_msg_tracker::JoyMsgTracker;
 use logging::{log_error, LogContext};
 use profile::{is_enabled, load_profile_from_params};
@@ -56,13 +56,17 @@ fn process_input_mappings(
 
         match &mapping.action {
             ActionType::PublishTwistField { field } => {
-                match field {
-                    OutputField::LinearX => twist_accumulator.linear.x += input_value,
-                    OutputField::LinearY => twist_accumulator.linear.y += input_value,
-                    OutputField::LinearZ => twist_accumulator.linear.z += input_value,
-                    OutputField::AngularX => twist_accumulator.angular.x += input_value,
-                    OutputField::AngularY => twist_accumulator.angular.y += input_value,
-                    OutputField::AngularZ => twist_accumulator.angular.z += input_value,
+                match field.as_str() {
+                    "linear_x" => twist_accumulator.linear.x += input_value,
+                    "linear_y" => twist_accumulator.linear.y += input_value,
+                    "linear_z" => twist_accumulator.linear.z += input_value,
+                    "angular_x" => twist_accumulator.angular.x += input_value,
+                    "angular_y" => twist_accumulator.angular.y += input_value,
+                    "angular_z" => twist_accumulator.angular.z += input_value,
+                    _ => {
+                        pr_error!(logger, "Unknown twist field: {}", field);
+                        continue;
+                    }
                 }
                 has_twist_contribution = true;
             }
@@ -181,7 +185,7 @@ fn main_impl() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Profile, InputMapping, InputSource, ActionType, OutputField};
+    use crate::config::{Profile, InputMapping, InputSource, ActionType};
     use crate::joy_msg_tracker::JoyMsgTracker;
     use crate::profile::is_enabled;
 
@@ -207,7 +211,7 @@ mod tests {
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
             action: ActionType::PublishTwistField {
-                field: OutputField::LinearX,
+                field: "linear_x".to_string(),
             },
             scale: 2.0,
             offset: 0.0,
@@ -218,7 +222,7 @@ mod tests {
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(1),
             action: ActionType::PublishTwistField {
-                field: OutputField::AngularZ,
+                field: "angular_z".to_string(),
             },
             scale: -1.0,
             offset: 0.5,
