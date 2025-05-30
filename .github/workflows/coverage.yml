@@ -28,9 +28,17 @@ jobs:
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
     
-    - name: Install cargo-llvm-cov
+    - name: Install tools
       run: |
+        source /opt/ros/humble/setup.bash
         $HOME/.cargo/bin/cargo install cargo-llvm-cov
+        $HOME/.cargo/bin/cargo install safe_drive_msg
+    
+    - name: Generate ROS messages
+      run: |
+        source /opt/ros/humble/setup.bash
+        chmod +x scripts/generate_messages.sh
+        ./scripts/generate_messages.sh
     
     - name: Generate coverage
       run: |

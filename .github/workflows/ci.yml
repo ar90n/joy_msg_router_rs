@@ -8,94 +8,87 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  ROS_DISTRO: humble
 
 jobs:
-  lint:
-    name: Lint
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
     container:
-      image: osrf/ros:humble-desktop
+      image: osrf/ros:humble-desktop-full
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         apt-get update
-        apt-get install -y curl build-essential git
+        apt-get install -y \
+          curl \
+          build-essential \
+          git \
+          pkg-config \
+          libssl-dev
     
     - name: Install Rust
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --component rustfmt clippy
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-    
-    - name: Check formatting
+        
+    - name: Setup ROS2 environment and install cargo tools
+      shell: bash
       run: |
         source /opt/ros/humble/setup.bash
-        $HOME/.cargo/bin/cargo fmt -- --check
+        export PATH="$HOME/.cargo/bin:$PATH"
+        
+        # Install required cargo tools
+        cargo install safe_drive_msg --version 0.2
+        cargo install cargo-ament-build
+        
+        # Generate messages for safe_drive
+        mkdir -p /tmp/safe_drive_msgs
+        
+        # Generate with explicit ROS2 environment
+        AMENT_PREFIX_PATH=/opt/ros/humble safe_drive_msg std_msgs -o /tmp/safe_drive_msgs -p
+        AMENT_PREFIX_PATH=/opt/ros/humble safe_drive_msg sensor_msgs -o /tmp/safe_drive_msgs -p  
+        AMENT_PREFIX_PATH=/opt/ros/humble safe_drive_msg geometry_msgs -o /tmp/safe_drive_msgs -p
+        
+        # Verify generation
+        echo "Generated message packages:"
+        ls -la /tmp/safe_drive_msgs/
     
-    - name: Run clippy
+    - name: Format check
+      shell: bash
       run: |
         source /opt/ros/humble/setup.bash
-        $HOME/.cargo/bin/cargo clippy -- -D warnings
-
-  test:
-    name: Test
+        export PATH="$HOME/.cargo/bin:$PATH"
+        cargo fmt -- --check
+    
+    - name: Clippy check
+      shell: bash
+      run: |
+        source /opt/ros/humble/setup.bash
+        export PATH="$HOME/.cargo/bin:$PATH"
+        cargo clippy -- -D warnings
+    
+    - name: Build
+      shell: bash
+      run: |
+        source /opt/ros/humble/setup.bash
+        export PATH="$HOME/.cargo/bin:$PATH"
+        cargo build --verbose
+        cargo build --release --verbose
+    
+    - name: Test
+      shell: bash  
+      run: |
+        source /opt/ros/humble/setup.bash
+        export PATH="$HOME/.cargo/bin:$PATH"
+        cargo test --verbose
+        
+  colcon-build:
+    name: Colcon Build
     runs-on: ubuntu-latest
     container:
-      image: osrf/ros:humble-desktop
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential git
-    
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-    
-    - name: Run tests
-      run: |
-        source /opt/ros/humble/setup.bash
-        $HOME/.cargo/bin/cargo test --verbose
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    container:
-      image: osrf/ros:humble-desktop
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential git
-    
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-    
-    - name: Build debug
-      run: |
-        source /opt/ros/humble/setup.bash
-        $HOME/.cargo/bin/cargo build --verbose
-    
-    - name: Build release
-      run: |
-        source /opt/ros/humble/setup.bash
-        $HOME/.cargo/bin/cargo build --release --verbose
-
-  # Separate job for ROS2 integration tests
-  ros2-integration:
-    name: ROS2 Integration Build
-    runs-on: ubuntu-latest
-    container:
-      image: osrf/ros:humble-desktop
+      image: osrf/ros:humble-desktop-full
     steps:
     - uses: actions/checkout@v4
     
@@ -115,25 +108,26 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
     
     - name: Install cargo-ament-build
+      shell: bash
       run: |
-        $HOME/.cargo/bin/cargo install cargo-ament-build
+        source /opt/ros/humble/setup.bash
+        export PATH="$HOME/.cargo/bin:$PATH"
+        cargo install cargo-ament-build
     
-    - name: Create workspace
+    - name: Create workspace and build
+      shell: bash
       run: |
         mkdir -p ws/src
-        cd ws/src
-        ln -s $GITHUB_WORKSPACE joy_msg_router_rs
-    
-    - name: Build with colcon
-      run: |
+        ln -s $GITHUB_WORKSPACE ws/src/joy_msg_router_rs
         cd ws
-        source /opt/ros/$ROS_DISTRO/setup.bash
+        source /opt/ros/humble/setup.bash
         colcon build --packages-select joy_msg_router_rs
-    
-    - name: Run colcon tests
+        
+    - name: Run tests
+      shell: bash
       run: |
         cd ws
-        source /opt/ros/$ROS_DISTRO/setup.bash
+        source /opt/ros/humble/setup.bash
         source install/setup.bash
         colcon test --packages-select joy_msg_router_rs
         colcon test-result --verbose
