@@ -8,41 +8,34 @@ jobs:
   # Build debian packages for different ROS2 distributions
   build-deb:
     name: Build Debian Package (${{ matrix.ros_distro }})
-    runs-on: ubuntu-latest
-    container:
-      image: ros:${{ matrix.ros_distro }}
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
-        include:
-          - ros_distro: humble
-            ubuntu_distro: jammy
-          - ros_distro: iron
-            ubuntu_distro: jammy
+        ros_distro: [humble]  # Add iron later when tested
     steps:
     - uses: actions/checkout@v4
     
+    - name: Setup ROS 2 ${{ matrix.ros_distro }}
+      uses: ros-tooling/setup-ros@v0.7
+      with:
+        required-ros-distributions: ${{ matrix.ros_distro }}
+    
     - name: Install dependencies
       run: |
-        apt-get update
-        apt-get install -y \
+        sudo apt-get update
+        sudo apt-get install -y \
           python3-colcon-common-extensions \
           python3-bloom \
           python3-rosdep \
           fakeroot \
           dpkg-dev \
-          debhelper \
-          curl \
-          build-essential \
-          git
+          debhelper
     
     - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      uses: dtolnay/rust-toolchain@stable
     
     - name: Install cargo-ament-build
-      run: |
-        $HOME/.cargo/bin/cargo install cargo-ament-build
+      run: cargo install cargo-ament-build
     
     - name: Get version
       id: get_version
@@ -58,9 +51,8 @@ jobs:
       run: |
         # Create workspace
         mkdir -p ws/src
-        cd ws/src
-        ln -s $GITHUB_WORKSPACE joy_msg_router_rs
-        cd ..
+        ln -s $GITHUB_WORKSPACE ws/src/joy_msg_router_rs
+        cd ws
         
         # Build
         source /opt/ros/${{ matrix.ros_distro }}/setup.bash

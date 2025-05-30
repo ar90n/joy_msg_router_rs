@@ -12,38 +12,37 @@ env:
 jobs:
   coverage:
     name: Code Coverage
-    runs-on: ubuntu-latest
-    container:
-      image: osrf/ros:humble-desktop
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y curl build-essential git
+    - name: Setup ROS 2 Humble
+      uses: ros-tooling/setup-ros@v0.7
+      with:
+        required-ros-distributions: humble
     
     - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: llvm-tools-preview
+        
+    - name: Install dependencies
       run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-    
-    - name: Install tools
+        cargo install cargo-llvm-cov
+        cargo install safe_drive_msg
+        
+    - name: Generate messages
       run: |
         source /opt/ros/humble/setup.bash
-        $HOME/.cargo/bin/cargo install cargo-llvm-cov
-        $HOME/.cargo/bin/cargo install safe_drive_msg
-    
-    - name: Generate ROS messages
-      run: |
-        source /opt/ros/humble/setup.bash
-        chmod +x scripts/generate_messages.sh
-        ./scripts/generate_messages.sh
-    
+        mkdir -p /tmp/safe_drive_msgs
+        safe_drive_msg std_msgs -o /tmp/safe_drive_msgs -p
+        safe_drive_msg sensor_msgs -o /tmp/safe_drive_msgs -p
+        safe_drive_msg geometry_msgs -o /tmp/safe_drive_msgs -p
+        
     - name: Generate coverage
       run: |
         source /opt/ros/humble/setup.bash
-        $HOME/.cargo/bin/cargo llvm-cov --all-features --lcov --output-path lcov.info
+        cargo llvm-cov --all-features --lcov --output-path lcov.info
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

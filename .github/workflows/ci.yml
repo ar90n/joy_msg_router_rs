@@ -67,30 +67,35 @@ jobs:
       with:
         required-ros-distributions: humble
     
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-colcon-common-extensions
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt, clippy
         
-    - name: Install dependencies
+    - name: Install cargo-ament-build
+      run: cargo install cargo-ament-build
+    
+    - name: Create workspace and build for message generation
       run: |
-        cargo install cargo-ament-build
-        cargo install safe_drive_msg
-        
-    - name: Generate messages
-      run: |
+        mkdir -p ~/ws/src
+        ln -s $GITHUB_WORKSPACE ~/ws/src/
+        cd ~/ws
         source /opt/ros/humble/setup.bash
-        mkdir -p /tmp/safe_drive_msgs
-        safe_drive_msg std_msgs -o /tmp/safe_drive_msgs -p
-        safe_drive_msg sensor_msgs -o /tmp/safe_drive_msgs -p
-        safe_drive_msg geometry_msgs -o /tmp/safe_drive_msgs -p
+        colcon build --packages-select joy_msg_router_rs
         
     - name: Format check
       run: |
+        cd ~/ws/src/joy_msg_router_rs
         source /opt/ros/humble/setup.bash
         cargo fmt -- --check
         
     - name: Clippy
       run: |
+        cd ~/ws/src/joy_msg_router_rs
         source /opt/ros/humble/setup.bash
         cargo clippy -- -D warnings
