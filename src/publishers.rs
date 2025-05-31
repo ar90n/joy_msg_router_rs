@@ -193,24 +193,6 @@ impl Publishers {
             .unwrap_or(false)
     }
 
-    /// Publish accumulated Twist message
-    pub fn publish_twist(&self, topic: &str, twist: &Twist) -> Result<()> {
-        let (publisher, message_type) = self
-            .publishers
-            .get(topic)
-            .ok_or_else(|| anyhow!("No publisher for topic: {}", topic))?;
-
-        match (publisher, message_type.as_str()) {
-            (Publisher::Twist(pub_ref), "geometry_msgs/msg/Twist") => {
-                pub_ref
-                    .send(twist)
-                    .map_err(|e| anyhow!("Failed to send Twist: {:?}", e))?;
-            }
-            _ => return Err(anyhow!("Topic {} is not a Twist publisher", topic)),
-        }
-
-        Ok(())
-    }
 
     /// Get supported message types
     #[allow(dead_code)]

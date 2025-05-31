@@ -17,7 +17,6 @@ use safe_drive::{
     msg::common_interfaces::{sensor_msgs, std_srvs},
     pr_debug, pr_error, pr_info, pr_warn,
 };
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 mod clients;
@@ -75,9 +74,6 @@ fn process_input_mappings(
     clients: &mut ServiceClients,
     logger: &Logger,
 ) -> Result<()> {
-    // Collect Twist contributions per topic
-    let mut twist_accumulators: HashMap<String, ::geometry_msgs::msg::Twist> = HashMap::new();
-
     for mapping in input_mappings {
         let (input_value, is_active, just_activated) = match mapping.source {
             InputSource::Axis(idx) => {
@@ -121,47 +117,19 @@ fn process_input_mappings(
                     message_type,
                     processed_value
                 );
-                // Special handling for Twist messages - accumulate values
-                if message_type == "geometry_msgs/msg/Twist" {
-                    let twist = twist_accumulators
-                        .entry(topic.clone())
-                        .or_insert_with(|| ::geometry_msgs::msg::Twist::new().unwrap());
-
-                    if let Some(field_name) = field {
-                        match field_name.as_str() {
-                            "linear.x" | "linear_x" => twist.linear.x += processed_value,
-                            "linear.y" | "linear_y" => twist.linear.y += processed_value,
-                            "linear.z" | "linear_z" => twist.linear.z += processed_value,
-                            "angular.x" | "angular_x" => twist.angular.x += processed_value,
-                            "angular.y" | "angular_y" => twist.angular.y += processed_value,
-                            "angular.z" | "angular_z" => twist.angular.z += processed_value,
-                            _ => {
-                                pr_error!(logger, "Unknown twist field: {}", field_name);
-                            }
-                        }
-                    }
-                } else {
-                    pr_info!(
+                // Publish value directly
+                if let Err(e) =
+                    publishers.publish_value(topic, processed_value, field.as_deref())
+                {
+                    log_error(
                         logger,
-                        "Publishing value {} to topic {} with field {:?}",
-                        processed_value,
-                        topic,
-                        field
+                        LogContext {
+                            module: "main",
+                            function: "process_input_mappings",
+                            details: Some("publish_value"),
+                        },
+                        &e,
                     );
-                    // For non-Twist messages, publish immediately
-                    if let Err(e) =
-                        publishers.publish_value(topic, processed_value, field.as_deref())
-                    {
-                        log_error(
-                            logger,
-                            LogContext {
-                                module: "main",
-                                function: "process_input_mappings",
-                                details: Some("generic_publish"),
-                            },
-                            &e,
-                        );
-                    }
                 }
             }
             ActionType::CallService {
@@ -216,20 +184,6 @@ fn process_input_mappings(
         }
     }
 
-    // Publish all accumulated Twist messages
-    for (topic, twist) in twist_accumulators {
-        if let Err(e) = publishers.publish_twist(&topic, &twist) {
-            log_error(
-                logger,
-                LogContext {
-                    module: "main",
-                    function: "process_input_mappings",
-                    details: Some("accumulated_twist"),
-                },
-                &e,
-            );
-        }
-    }
 
     Ok(())
 }
