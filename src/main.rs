@@ -26,6 +26,7 @@ mod joy_msg_tracker;
 mod logging;
 mod profile;
 mod publishers;
+mod yaml_loader;
 
 use anyhow::Context;
 use anyhow::{anyhow, Result};
@@ -34,6 +35,7 @@ use config::{ActionType, InputMapping, InputSource};
 use joy_msg_tracker::JoyMsgTracker;
 use logging::{log_error, LogContext};
 use profile::{is_enabled, load_profile_from_params};
+use yaml_loader::load_profile_from_yaml_file;
 
 /// Handle the result of sending a service request in fire-and-forget mode
 fn handle_service_send_result<T>(
@@ -240,10 +242,46 @@ fn main() -> Result<()> {
         ctx.create_node("joy_msg_router", None, Default::default())
             .map_err(|e| anyhow!("Failed to create ROS2 node: {:?}", e))?,
     );
-    let profile = node
+    
+    // Create parameter server
+    let param_server = node
         .create_parameter_server()
-        .map_err(|e| anyhow!("Failed to create parameter server: {:?}", e))
-        .and_then(|ps| load_profile_from_params(&ps))?;
+        .map_err(|e| anyhow!("Failed to create parameter server: {:?}", e))?;
+    
+    // Try to load profile - first check if config_file parameter is set
+    let profile = {
+        let params_guard = param_server.params.read();
+        
+        // Check for config_file parameter
+        let config_file = params_guard.get_parameter("config_file")
+            .and_then(|p| if let safe_drive::parameter::Value::String(s) = &p.value { 
+                Some(s.clone()) 
+            } else { 
+                None 
+            });
+        drop(params_guard); // Release the lock before loading from file
+        
+        if let Some(config_file) = config_file {
+            pr_info!(logger, "Loading configuration from file: {}", config_file);
+                
+                // Check if profile_name parameter is also set
+                let profile_name = {
+                    let params_guard = param_server.params.read();
+                    params_guard.get_parameter("profile_name")
+                        .and_then(|p| if let safe_drive::parameter::Value::String(s) = &p.value { 
+                            Some(s.clone()) 
+                        } else { 
+                            None 
+                        })
+                };
+                
+            load_profile_from_yaml_file(&config_file, profile_name.as_deref())
+                .context("Failed to load profile from YAML file")?
+        } else {
+            // No config file, use ROS2 parameters
+            load_profile_from_params(&param_server)?
+        }
+    };
 
     pr_info!(logger, "Joy message router node started");
     pr_info!(logger, "Active profile: {}", profile.name);

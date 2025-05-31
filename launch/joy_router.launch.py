@@ -21,10 +21,24 @@ def launch_setup(context, *args, **kwargs):
     joy_topic = LaunchConfiguration('joy_topic').perform(context)
     cmd_vel_topic = LaunchConfiguration('cmd_vel_topic').perform(context)
     param_file = LaunchConfiguration('param_file').perform(context)
+    config_file = LaunchConfiguration('config_file').perform(context)
+    profile_name = LaunchConfiguration('profile_name').perform(context)
     
-    # Convert relative path to absolute if needed
-    if param_file and not os.path.isabs(param_file):
-        param_file = os.path.abspath(param_file)
+    # Prepare parameters
+    parameters = []
+    
+    # If config_file is specified, add it as a parameter
+    if config_file:
+        if not os.path.isabs(config_file):
+            config_file = os.path.abspath(config_file)
+        parameters.append({'config_file': config_file})
+        if profile_name:
+            parameters.append({'profile_name': profile_name})
+    elif param_file:
+        # Convert relative path to absolute if needed
+        if not os.path.isabs(param_file):
+            param_file = os.path.abspath(param_file)
+        parameters.append(param_file)
     
     # Joy message router node
     joy_router_node = Node(
@@ -32,7 +46,7 @@ def launch_setup(context, *args, **kwargs):
         executable='joy_msg_router',
         name='joy_msg_router',
         namespace=namespace,
-        parameters=[param_file] if param_file else [],
+        parameters=parameters,
         remappings=[
             ('joy', joy_topic),
             ('cmd_vel', cmd_vel_topic),
@@ -75,6 +89,18 @@ def generate_launch_description():
         description='Path to ROS parameter file (YAML). If empty, parameters must be set separately.'
     )
     
+    config_file_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value='',
+        description='Path to hierarchical YAML configuration file. Takes precedence over param_file.'
+    )
+    
+    profile_name_arg = DeclareLaunchArgument(
+        'profile_name',
+        default_value='',
+        description='Profile name to use when loading from config_file.'
+    )
+    
     # Get launch configurations
     joy_topic = LaunchConfiguration('joy_topic')
     cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
@@ -93,6 +119,8 @@ def generate_launch_description():
         joy_topic_arg,
         cmd_vel_topic_arg,
         param_file_arg,
+        config_file_arg,
+        profile_name_arg,
         
         # Log launch info
         log_info,
