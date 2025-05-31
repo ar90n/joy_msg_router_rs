@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![ROS](https://img.shields.io/badge/ROS-Humble-blue)](https://docs.ros.org/en/humble/)
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange)](https://www.rust-lang.org/)
+![Built with vibe coding](https://img.shields.io/badge/built%20with-vibe%20coding-ff69b4)
 
 A ROS2 node written in Rust that routes joystick (Joy) messages to various ROS messages and services. This package provides flexible, configurable mapping from joystick inputs to any supported ROS message type with safety features like enable buttons and deadzone filtering.
 
@@ -165,8 +166,11 @@ joy_msg_router:
 
 2. **call_service**: Call a ROS service (button only)
    - `service_name`: Name of the service to call (required)
-   - `service_type`: Service type (required, currently only "std_srvs/srv/Trigger" is supported)
-   - Services are called when the button is pressed
+   - `service_type`: Service type (required)
+   - Supported service types:
+     - `std_srvs/srv/Trigger`: Service with boolean success and message response
+     - `std_srvs/srv/Empty`: Service with no request/response data
+   - Services are called when the button is pressed (on rising edge)
 
 ### Input Processing
 
@@ -224,6 +228,7 @@ This node is built using:
 - **Runtime message type selection**: Publishers are created dynamically based on configuration
 - **Unified input processing**: Single processing loop handles all input types
 - **Accumulation for Twist messages**: Multiple inputs can contribute to a single Twist message
+- **Fire-and-forget service calling**: Service calls don't block the main loop, ensuring real-time joystick responsiveness
 
 ### Key Components
 1. **JoyMsgTracker**: Tracks joystick state and detects changes
