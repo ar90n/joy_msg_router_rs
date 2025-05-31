@@ -1,0 +1,57 @@
+[0.069s] DEBUG:colcon:Command line arguments: ['/workspaces/dev-joy-msg-router-rs/.venv/bin/colcon', 'build']
+[0.069s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=False, test_result_base=None, continue_on_error=False, executor='sequential', event_handlers=None, base_paths=['.'], paths=None, cargo_args=None, clean_build=False, cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, lookup_in_workspace=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, verb_parser=CustomArgumentParser(prog='colcon build', usage=None, description='Build a set of packages.', formatter_class=<class 'colcon_core.command.CustomFormatter'>, conflict_handler='error', add_help=True), verb_extension=<colcon_core.verb.build.BuildVerb object at 0x7da153655640>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0x7da153655640>>)
+[0.100s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[0.100s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[0.100s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[0.100s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs'
+[0.100s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.100s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore'
+[0.100s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore_ament_install'
+[0.100s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ros']
+[0.100s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ros'
+[0.121s] DEBUG:colcon.colcon_core.package_identification:Package '.' with type 'ros.ament_cargo' and name 'joy_msg_router_rs'
+[0.121s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults
+[0.121s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) discover
+[0.121s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) using defaults
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'cargo_args' from command line to 'None'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'clean_build' from command line to 'False'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'cmake_args' from command line to 'None'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'cmake_target' from command line to 'None'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'cmake_clean_cache' from command line to 'False'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'cmake_clean_first' from command line to 'False'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'cmake_force_configure' from command line to 'False'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'lookup_in_workspace' from command line to 'False'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'ament_cmake_args' from command line to 'None'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'catkin_cmake_args' from command line to 'None'
+[0.132s] Level 5:colcon.colcon_core.verb:set package 'joy_msg_router_rs' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.132s] DEBUG:colcon.colcon_core.verb:Building package 'joy_msg_router_rs' with the following arguments: {'ament_cmake_args': None, 'build_base': '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/build/joy_msg_router_rs', 'cargo_args': None, 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'clean_build': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs', 'lookup_in_workspace': False, 'merge_install': False, 'path': '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs', 'symlink_install': False, 'test_result_base': None}
+[0.132s] INFO:colcon.colcon_core.executor:Executing jobs using 'sequential' executor
+[0.133s] DEBUG:colcon.colcon_core.executor.sequential:run_until_complete 'joy_msg_router_rs'
+[0.133s] INFO:colcon.colcon_cargo.task.cargo.build:Building Cargo package in '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs'
+[0.133s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[0.134s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.189s] Level 1:colcon.colcon_core.shell:create_environment_hook('joy_msg_router_rs', 'ament_prefix_path')
+[0.189s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/share/joy_msg_router_rs/hook/ament_prefix_path.dsv'
+[0.190s] INFO:colcon.colcon_core.shell:Creating environment hook '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/share/joy_msg_router_rs/hook/ament_prefix_path.sh'
+[0.191s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '.': /usr/local/cargo/bin/cargo ament-build --install-base /workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs -- --manifest-path /workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/Cargo.toml --target-dir /workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/build/joy_msg_router_rs --quiet
+[8.490s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(joy_msg_router_rs)
+[8.490s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '.' returned '0': /usr/local/cargo/bin/cargo ament-build --install-base /workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs -- --manifest-path /workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/Cargo.toml --target-dir /workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/build/joy_msg_router_rs --quiet
+[8.491s] Level 1:colcon.colcon_core.environment:checking '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs' for CMake module files
+[8.492s] Level 1:colcon.colcon_core.environment:checking '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs' for CMake config files
+[8.492s] Level 1:colcon.colcon_core.environment:checking '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/lib'
+[8.492s] Level 1:colcon.colcon_core.environment:checking '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/bin'
+[8.492s] Level 1:colcon.colcon_core.environment:checking '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/lib/pkgconfig/joy_msg_router_rs.pc'
+[8.494s] Level 1:colcon.colcon_core.environment:checking '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/lib/python3.12/site-packages'
+[8.494s] Level 1:colcon.colcon_core.environment:checking '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/bin'
+[8.494s] INFO:colcon.colcon_core.shell:Creating package descriptor '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/share/joy_msg_router_rs/package.dsv'
+[8.495s] INFO:colcon.colcon_core.shell:Creating package script '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/share/joy_msg_router_rs/package.sh'
+[8.495s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/joy_msg_router_rs/share/colcon-core/packages/joy_msg_router_rs)
+[8.496s] DEBUG:colcon.colcon_core.executor.sequential:run_until_complete 'joy_msg_router_rs' finished with '0'
+[8.496s] DEBUG:colcon.colcon_core.executor.sequential:closing loop
+[8.496s] DEBUG:colcon.colcon_core.executor.sequential:loop closed
+[8.496s] DEBUG:colcon.colcon_core.event_reactor:joining thread
+[8.496s] DEBUG:colcon.colcon_core.event_reactor:joined thread
+[8.496s] INFO:colcon.colcon_core.shell:Creating prefix script '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/local_setup.sh'
+[8.497s] INFO:colcon.colcon_core.shell:Creating prefix util module '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/_local_setup_util_sh.py'
+[8.498s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/workspaces/dev-joy-msg-router-rs/src/joy_msg_router_rs/install/setup.sh'

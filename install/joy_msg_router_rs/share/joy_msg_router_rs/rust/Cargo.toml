@@ -1,0 +1,33 @@
+[package]
+name = "joy_msg_router_rs"
+version = "0.1.0"
+authors = ["Masahiro Wada<argon.argon.argon@gmail.com>"]
+edition = "2021"
+
+[[bin]]
+name = "joy_msg_router"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+safe_drive = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+std_msgs = { path = "/tmp/safe_drive_msgs/std_msgs" }
+sensor_msgs = { path = "/tmp/safe_drive_msgs/sensor_msgs" }
+geometry_msgs = { path = "/tmp/safe_drive_msgs/geometry_msgs" }
+
+[package.metadata.ros]
+msg = ["std_msgs", "sensor_msgs", "geometry_msgs"]
+msg_dir = "/tmp/safe_drive_msgs"
+safe_drive_version = "0.4"
+
+[package.metadata.ament_cargo]
+# Additional files to install
+extra_files = [
+    { src = "launch", dest = "share/joy_msg_router_rs/launch" },
+    { src = "config", dest = "share/joy_msg_router_rs/config" },
+    { src = "tests", dest = "share/joy_msg_router_rs/tests" },
+]

@@ -55,6 +55,8 @@ pub enum ActionType {
 
     CallService {
         service_name: String,
+        /// Service type is needed for initial client creation and recreation after use
+        /// e.g., "std_srvs/srv/Trigger", "std_srvs/srv/Empty"
         service_type: String,
     },
 }
@@ -288,5 +290,23 @@ mod tests {
         });
 
         assert!(profile.validate().is_err());
+    }
+
+    #[test]
+    fn test_service_call_action() {
+        let mapping = InputMapping {
+            source: InputSource::Button(1),
+            action: ActionType::CallService {
+                service_name: "/reset_robot".to_string(),
+                service_type: "std_srvs/srv/Trigger".to_string(),
+            },
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.0,
+        };
+
+        // Service call actions should only trigger on button press
+        assert_eq!(mapping.process_value(0.0), 0.0);
+        assert_eq!(mapping.process_value(1.0), 1.0); // Button pressed
     }
 }

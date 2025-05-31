@@ -50,7 +50,11 @@ def generate_launch_description():
     
     param_file_arg = DeclareLaunchArgument(
         'param_file',
-        default_value='',
+        default_value=PathJoinSubstitution([
+            FindPackageShare('joy_msg_router_rs'),
+            'config',
+            'default_params.yaml'
+        ]),
         description='Path to ROS parameter file (YAML) for joy_msg_router. If empty, parameters must be set separately.'
     )
     

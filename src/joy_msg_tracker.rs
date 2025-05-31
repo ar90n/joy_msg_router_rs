@@ -1,4 +1,4 @@
-use sensor_msgs::msg::Joy;
+use safe_drive::msg::common_interfaces::sensor_msgs::msg::Joy;
 use std::collections::HashMap;
 
 /// Tracks joy message states (axes and buttons) and detects press/release events
