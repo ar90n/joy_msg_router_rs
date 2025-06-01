@@ -130,6 +130,7 @@ mod tests {
 
         // Add Trigger service
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "/reset".to_string(),
@@ -142,6 +143,7 @@ mod tests {
 
         // Add Empty service
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(1),
             action: ActionType::CallService {
                 service_name: "/stop".to_string(),
@@ -154,6 +156,7 @@ mod tests {
 
         // Add unsupported service (should be ignored)
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(2),
             action: ActionType::CallService {
                 service_name: "/custom".to_string(),
@@ -166,6 +169,7 @@ mod tests {
 
         // Add publish action (should be ignored)
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -222,8 +226,9 @@ mod tests {
             ("nav_msgs/srv/LoadMap", false),      // Not supported
         ];
 
-        for (i, (service_type, should_be_supported)) in service_configs.iter().enumerate() {
+        for (i, (service_type, _should_be_supported)) in service_configs.iter().enumerate() {
             profile.input_mappings.push(InputMapping {
+                id: None,
                 source: InputSource::Button(i),
                 action: ActionType::CallService {
                     service_name: format!("/service_{}", i),
@@ -253,6 +258,7 @@ mod tests {
 
         // Add same service name twice with different types
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "/reset".to_string(),
@@ -264,6 +270,7 @@ mod tests {
         });
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(1),
             action: ActionType::CallService {
                 service_name: "/reset".to_string(),             // Same name

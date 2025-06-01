@@ -427,6 +427,7 @@ mod tests {
 
         // Button 0 -> emergency stop (zero linear_x)
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -441,6 +442,7 @@ mod tests {
 
         // Button 1 -> fixed forward speed
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(1),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -455,6 +457,7 @@ mod tests {
 
         // Button 2 -> rotate left
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(2),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -496,6 +499,7 @@ mod tests {
 
         // Axis 2 (trigger) -> publish bool when pressed beyond threshold
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(2),
             action: ActionType::Publish {
                 topic: "/trigger/pressed".to_string(),
@@ -529,6 +533,7 @@ mod tests {
 
         // Axis 0 -> linear.x (forward/back)
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -543,6 +548,7 @@ mod tests {
 
         // Axis 1 -> linear.y (strafe for holonomic)
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(1),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -557,6 +563,7 @@ mod tests {
 
         // Axis 3 -> angular.z (rotation)
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(3),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -586,6 +593,7 @@ mod tests {
 
         // Trigger axis that rests at 1.0 and goes to -1.0 when pressed
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(5),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -619,6 +627,7 @@ mod tests {
         // D-pad style control
         // Button 0 -> forward
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -633,6 +642,7 @@ mod tests {
 
         // Button 1 -> backward
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(1),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -647,6 +657,7 @@ mod tests {
 
         // Button 2 -> turn left
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(2),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -661,6 +672,7 @@ mod tests {
 
         // Button 3 -> turn right
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(3),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -692,6 +704,7 @@ mod tests {
         let mut profile = Profile::new("test".to_string());
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(5),
             action: ActionType::CallService {
                 service_name: "/emergency_stop".to_string(),
@@ -724,6 +737,7 @@ mod tests {
         let _mappings = vec![
             // Add a supported service (Trigger)
             InputMapping {
+                id: None,
                 source: InputSource::Button(0),
                 action: ActionType::CallService {
                     service_name: "/reset_odometry".to_string(),
@@ -735,6 +749,7 @@ mod tests {
             },
             // Add an unsupported service type (should be ignored)
             InputMapping {
+                id: None,
                 source: InputSource::Button(1),
                 action: ActionType::CallService {
                     service_name: "/set_mode".to_string(),
@@ -755,6 +770,7 @@ mod tests {
     #[test]
     fn test_deadzone_behavior() {
         let mapping = InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -786,6 +802,7 @@ mod tests {
     #[test]
     fn test_generic_publish_float64() {
         let mapping = InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/test/speed".to_string(),
@@ -808,6 +825,7 @@ mod tests {
     #[test]
     fn test_generic_publish_vector3() {
         let mapping = InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::Publish {
                 topic: "/test/vector".to_string(),
@@ -859,6 +877,7 @@ mod tests {
 
         // Button 0 -> Trigger service
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "/reset".to_string(),
@@ -871,6 +890,7 @@ mod tests {
 
         // Button 1 -> Empty service
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(1),
             action: ActionType::CallService {
                 service_name: "/stop".to_string(),
@@ -883,6 +903,7 @@ mod tests {
 
         // Button 2 -> Another Trigger service
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(2),
             action: ActionType::CallService {
                 service_name: "/calibrate".to_string(),
@@ -927,6 +948,7 @@ mod tests {
 
         // Axis 0 -> linear velocity
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -941,6 +963,7 @@ mod tests {
 
         // Button 0 -> service call
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "/reset_odometry".to_string(),
@@ -953,6 +976,7 @@ mod tests {
 
         // Button 1 -> bool publish
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(1),
             action: ActionType::Publish {
                 topic: "/lights/enable".to_string(),
@@ -978,6 +1002,7 @@ mod tests {
         // Create a dummy profile with service mappings
         let mut profile = Profile::new("test".to_string());
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "/test_service".to_string(),
@@ -1015,6 +1040,7 @@ mod tests {
         profile.enable_button = Some(4);
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "/emergency_stop".to_string(),
@@ -1040,7 +1066,7 @@ mod tests {
 
     #[test]
     fn test_modifier_functionality() {
-        use crate::config::{InputSourceType, ModifierTarget, SourceTarget};
+        use crate::config::ModifierTarget;
         use crate::modifier::{apply_modifiers_to_mapping, collect_active_modifiers};
 
         // Create a profile with a movement mapping and a modifier

@@ -209,7 +209,7 @@ mod tests {
             apply_modifiers_to_mapping(&target_mapping, &[modifier], &[target_mapping.clone()]);
 
         assert_eq!(modified.scale, 1.0); // 0.5 * 2.0
-        assert_eq!(modified.offset, 0.3); // 0.1 + 0.2
+        assert!((modified.offset - 0.3).abs() < f64::EPSILON); // 0.1 + 0.2 (with floating point tolerance)
         assert_eq!(modified.deadzone, 0.05); // min(0.15, 0.05)
     }
 
