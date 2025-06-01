@@ -14,6 +14,7 @@ A ROS2 node written in Rust that routes joystick (Joy) messages to various ROS m
 - **🎮 Joystick Input Processing**: Subscribes to `sensor_msgs/Joy` messages
 - **📤 Universal Message Publishing**: Publishes any supported ROS message type dynamically
 - **🔧 Service Calling**: Map buttons to ROS service calls
+- **🎯 Dynamic Modifiers**: Change control behavior on-the-fly (turbo, precision modes)
 - **⚙️ Flexible Configuration**: YAML-based profiles or ROS2 parameters
 - **🛡️ Safety Features**: Enable button support and deadzone filtering
 - **🔄 Unified Input Handling**: Both axes and buttons can trigger any action
@@ -42,20 +43,20 @@ source install/setup.bash
 
 #### Option 1: Complete Teleoperation Setup
 ```bash
-# Launches both joy node and joy_msg_router with parameter file
-ros2 launch joy_msg_router_rs joy_teleop.launch.py param_file:=/path/to/params.yaml
+# Launches both joy node and joy_msg_router with config file
+ros2 launch joy_msg_router_rs joy_teleop.launch.py config_file:=/path/to/config.yaml
 ```
 
 #### Option 2: Joy Router Only
 ```bash
 # If you already have a joy node running
-ros2 launch joy_msg_router_rs joy_router.launch.py param_file:=/path/to/params.yaml
+ros2 launch joy_msg_router_rs joy_router.launch.py config_file:=/path/to/config.yaml
 ```
 
 #### Option 3: Direct Node Execution
 ```bash
-# Run with parameter file
-ros2 run joy_msg_router_rs joy_msg_router --ros-args --params-file /path/to/params.yaml
+# Run with config file (hierarchical YAML)
+ros2 run joy_msg_router_rs joy_msg_router --ros-args -p config_file:=/path/to/config.yaml
 
 # Or set parameters individually
 ros2 run joy_msg_router_rs joy_msg_router --ros-args \
@@ -73,8 +74,10 @@ ros2 run joy_msg_router_rs joy_msg_router --ros-args \
 ## Configuration
 
 The node can be configured using either:
-1. **YAML profile files** (recommended): See `config/default.yaml` for examples
-2. **ROS2 parameters**: See `config/params_example.yaml` for parameter-based configuration
+1. **Hierarchical YAML files** (recommended): See `config/default.yaml` for examples
+2. **ROS2 parameters**: Use flat parameter format for runtime configuration
+
+For detailed documentation, see the [docs](docs/) directory.
 
 ### YAML Profile Format (Recommended)
 

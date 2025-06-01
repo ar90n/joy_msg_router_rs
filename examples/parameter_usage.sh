@@ -1,58 +1,64 @@
 #!/bin/bash
 # Examples of using joy_msg_router with different parameter configurations
 
-echo "Joy Message Router - Parameter Usage Examples"
-echo "============================================="
+echo "Joy Message Router - Usage Examples"
+echo "==================================="
 
-# Example 1: Default configuration
+# Example 1: Using hierarchical YAML config file
 echo ""
-echo "1. Running with default configuration:"
-echo "   ros2 run joy_msg_router_rs joy_msg_router"
-echo ""
-
-# Example 2: Command line profile selection
-echo "2. Selecting a specific profile via command line:"
-echo "   ros2 run joy_msg_router_rs joy_msg_router --profile drone"
+echo "1. Using hierarchical YAML configuration file (recommended):"
+echo "   ros2 run joy_msg_router_rs joy_msg_router --ros-args -p config_file:=/path/to/config.yaml"
 echo ""
 
-# Example 3: Custom configuration file
-echo "3. Using a custom configuration file:"
-echo "   ros2 run joy_msg_router_rs joy_msg_router --config /path/to/config.yaml --profile my_robot"
+# Example 2: Selecting a specific profile from config file
+echo "2. Selecting a specific profile from config file:"
+echo "   ros2 run joy_msg_router_rs joy_msg_router --ros-args \\"
+echo "     -p config_file:=config.yaml -p profile_name:=teleop_with_modifiers"
 echo ""
 
-# Example 4: Environment variables
-echo "4. Using environment variables:"
-echo "   export JOY_ROUTER_CONFIG_FILE=/path/to/config.yaml"
-echo "   export JOY_ROUTER_PROFILE=holonomic"
-echo "   ros2 run joy_msg_router_rs joy_msg_router"
+# Example 3: Using ROS2 parameters directly
+echo "3. Using ROS2 parameters directly (flat format):"
+echo "   ros2 run joy_msg_router_rs joy_msg_router --ros-args \\"
+echo "     -p profile_name:=custom \\"
+echo "     -p input_mappings.0.source_type:=axis \\"
+echo "     -p input_mappings.0.source_index:=1 \\"
+echo "     -p input_mappings.0.action_type:=publish \\"
+echo "     -p input_mappings.0.topic:=/cmd_vel \\"
+echo "     -p input_mappings.0.message_type:=\"geometry_msgs/msg/Twist\" \\"
+echo "     -p input_mappings.0.field:=\"linear.x\" \\"
+echo "     -p input_mappings.0.scale:=0.5"
 echo ""
 
-# Example 5: Launch files with parameters
-echo "5. Using launch files with parameters:"
-echo "   ros2 launch joy_msg_router_rs joy_router.launch.py profile:=teleop_safe"
-echo "   ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=drone device:=/dev/input/js1"
+# Example 4: Launch files with config
+echo "4. Using launch files with config file:"
+echo "   ros2 launch joy_msg_router_rs joy_router.launch.py \\"
+echo "     config_file:=./config/default.yaml profile_name:=teleop_safe"
 echo ""
 
-# Example 6: Multi-robot with different profiles
-echo "6. Multi-robot setup with different profiles:"
-echo "   # Terminal 1 - Differential drive robot"
+# Example 5: Multi-robot setup
+echo "5. Multi-robot setup with different configurations:"
+echo "   # Terminal 1 - Robot with turbo mode"
 echo "   ros2 launch joy_msg_router_rs joy_teleop.launch.py \\"
-echo "     namespace:=robot1 profile:=teleop cmd_vel_topic:=/robot1/cmd_vel"
+echo "     namespace:=robot1 config_file:=config.yaml profile_name:=teleop_with_modifiers \\"
+echo "     joy_topic:=/robot1/joy cmd_vel_topic:=/robot1/cmd_vel"
 echo ""
-echo "   # Terminal 2 - Holonomic robot"  
+echo "   # Terminal 2 - Robot with safe mode"
 echo "   ros2 launch joy_msg_router_rs joy_teleop.launch.py \\"
-echo "     namespace:=robot2 profile:=holonomic cmd_vel_topic:=/robot2/cmd_vel device:=/dev/input/js1"
+echo "     namespace:=robot2 config_file:=config.yaml profile_name:=teleop_safe \\"
+echo "     joy_topic:=/robot2/joy cmd_vel_topic:=/robot2/cmd_vel"
 echo ""
 
-# Parameter priority explanation
-echo "Parameter Priority (highest to lowest):"
-echo "  1. Command line arguments (--config, --profile)"
-echo "  2. Environment variables (JOY_ROUTER_CONFIG_FILE, JOY_ROUTER_PROFILE)"
-echo "  3. Default values (config/default.yaml, teleop profile)"
+# Available profiles
+echo "Available profiles in default.yaml:"
+echo "  - teleop:                Basic teleoperation"
+echo "  - teleop_safe:           With deadman switch (L1 button)"
+echo "  - teleop_with_modifiers: With turbo, precision, and emergency stop"
+echo "  - multi_output:          Examples of different message types"
 echo ""
 
-echo "Available profiles in default configuration:"
-echo "  - teleop:      Basic differential drive robot"
-echo "  - teleop_safe: Teleop with deadman switch (L1 button)"
-echo "  - holonomic:   Omnidirectional robot with strafe"
-echo "  - drone:       UAV/drone with 3D movement"
+# Modifier examples
+echo "Modifier functionality examples:"
+echo "  - Turbo mode:     Hold R1 to double speed"
+echo "  - Precision mode: Hold L1 for 30% speed"
+echo "  - Variable boost: Use right trigger for gradual speed increase"
+echo "  - Emergency stop: Press X to zero all movement"
