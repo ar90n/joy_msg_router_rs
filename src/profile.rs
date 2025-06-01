@@ -1,4 +1,4 @@
-use crate::config::{ActionType, InputMapping, InputSource, Profile};
+use crate::config::{ActionType, InputMapping, InputSource, InputSourceType, ModifierTarget, Profile, SourceTarget};
 use crate::joy_msg_tracker::JoyMsgTracker;
 use anyhow::{anyhow, Result};
 use safe_drive::parameter::{ParameterServer, Value};
@@ -33,6 +33,17 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
         {
             break;
         }
+        
+        // Parse optional id
+        let id = params_guard
+            .get_parameter(&format!("{}.id", prefix))
+            .and_then(|p| {
+                if let Value::String(v) = &p.value {
+                    Some(v.clone())
+                } else {
+                    None
+                }
+            });
 
         let source_type = match params_guard.get_parameter(&format!("{}.source_type", prefix)) {
             Some(param) => match &param.value {
@@ -138,6 +149,79 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
                     once,
                 }
             }
+            "modifier" => {
+                // Parse targets - for ROS2 params we'll use a simplified format
+                let mut targets = Vec::new();
+                let mut target_idx = 0;
+                
+                loop {
+                    let target_prefix = format!("{}.targets.{}", prefix, target_idx);
+                    
+                    // Check if target exists by looking for either mapping_id or source_type
+                    if params_guard.get_parameter(&format!("{}.mapping_id", target_prefix)).is_none()
+                        && params_guard.get_parameter(&format!("{}.source_type", target_prefix)).is_none() {
+                        break;
+                    }
+                    
+                    // Try mapping_id first
+                    if let Some(mapping_id_param) = params_guard.get_parameter(&format!("{}.mapping_id", target_prefix)) {
+                        if let Value::String(mapping_id) = &mapping_id_param.value {
+                            targets.push(ModifierTarget::MappingId { 
+                                mapping_id: mapping_id.clone() 
+                            });
+                        }
+                    } else if let (Some(type_param), Some(index_param)) = (
+                        params_guard.get_parameter(&format!("{}.source_type", target_prefix)),
+                        params_guard.get_parameter(&format!("{}.source_index", target_prefix))
+                    ) {
+                        if let (Value::String(source_type_str), Value::I64(source_index)) = 
+                            (&type_param.value, &index_param.value) {
+                            let source_type = match source_type_str.as_str() {
+                                "axis" => InputSourceType::Axis,
+                                "button" => InputSourceType::Button,
+                                _ => continue,
+                            };
+                            targets.push(ModifierTarget::Source {
+                                source: SourceTarget {
+                                    source_type,
+                                    source_index: *source_index as usize,
+                                }
+                            });
+                        }
+                    }
+                    
+                    target_idx += 1;
+                }
+                
+                if targets.is_empty() {
+                    continue; // Skip if no valid targets
+                }
+                
+                let scale_multiplier = params_guard
+                    .get_parameter(&format!("{}.scale_multiplier", prefix))
+                    .and_then(|p| if let Value::F64(v) = p.value { Some(v) } else { None });
+                    
+                let offset_delta = params_guard
+                    .get_parameter(&format!("{}.offset_delta", prefix))
+                    .and_then(|p| if let Value::F64(v) = p.value { Some(v) } else { None });
+                    
+                let deadzone_override = params_guard
+                    .get_parameter(&format!("{}.deadzone_override", prefix))
+                    .and_then(|p| if let Value::F64(v) = p.value { Some(v) } else { None });
+                    
+                let apply_gradually = params_guard
+                    .get_parameter(&format!("{}.apply_gradually", prefix))
+                    .and_then(|p| if let Value::Bool(v) = p.value { Some(v) } else { None })
+                    .unwrap_or(false);
+                
+                ActionType::Modifier {
+                    targets,
+                    scale_multiplier,
+                    offset_delta,
+                    deadzone_override,
+                    apply_gradually,
+                }
+            }
             _ => continue,
         };
 
@@ -173,6 +257,7 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
             .unwrap_or(0.1);
 
         profile.input_mappings.push(InputMapping {
+            id,
             source,
             action,
             scale,
@@ -288,7 +373,11 @@ mod tests {
                         .and_then(|v| if let Value::F64(f) = v { Some(*f) } else { None })
                         .unwrap_or(0.1);
                     
+                    let id = self.params.get(&format!("{}.id", prefix))
+                        .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None });
+                    
                     profile.input_mappings.push(InputMapping {
+                        id,
                         source,
                         action,
                         scale,
@@ -402,6 +491,7 @@ mod tests {
         profile.enable_button = Some(5);
         
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "/test".to_string(),

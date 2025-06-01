@@ -1,4 +1,4 @@
-use crate::config::{ActionType, InputMapping, InputSource, Profile};
+use crate::config::{ActionType, InputMapping, InputSource, ModifierTarget, Profile};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +19,7 @@ struct YamlProfile {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct YamlInputMapping {
+    id: Option<String>,
     source_type: String,
     source_index: usize,
     scale: Option<f64>,
@@ -31,12 +32,20 @@ struct YamlInputMapping {
 struct YamlAction {
     #[serde(rename = "type")]
     action_type: String,
+    // Publish fields
     topic: Option<String>,
     message_type: Option<String>,
     field: Option<String>,
     once: Option<bool>,
+    // Service fields
     service_name: Option<String>,
     service_type: Option<String>,
+    // Modifier fields
+    targets: Option<Vec<ModifierTarget>>,
+    scale_multiplier: Option<f64>,
+    offset_delta: Option<f64>,
+    deadzone_override: Option<f64>,
+    apply_gradually: Option<bool>,
 }
 
 pub fn load_profile_from_yaml_file<P: AsRef<Path>>(
@@ -102,10 +111,25 @@ pub fn load_profile_from_yaml_file<P: AsRef<Path>>(
                     service_type,
                 }
             }
+            "modifier" => {
+                let targets = yaml_mapping.action.targets
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Missing targets for modifier action"))?
+                    .clone();
+                
+                ActionType::Modifier {
+                    targets,
+                    scale_multiplier: yaml_mapping.action.scale_multiplier,
+                    offset_delta: yaml_mapping.action.offset_delta,
+                    deadzone_override: yaml_mapping.action.deadzone_override,
+                    apply_gradually: yaml_mapping.action.apply_gradually.unwrap_or(false),
+                }
+            }
             _ => return Err(anyhow!("Invalid action type: {}", yaml_mapping.action.action_type)),
         };
         
         profile.input_mappings.push(InputMapping {
+            id: yaml_mapping.id.clone(),
             source,
             action,
             scale: yaml_mapping.scale.unwrap_or(1.0),
@@ -206,6 +230,71 @@ profiles:
         match &profile.input_mappings[0].action {
             ActionType::Publish { topic, .. } => assert_eq!(topic, "/test2"),
             _ => panic!("Expected Publish action"),
+        }
+    }
+    
+    #[test]
+    fn test_load_modifier_profile() {
+        let yaml_content = r#"
+default_profile: "test"
+profiles:
+  test:
+    input_mappings:
+      - id: "forward_movement"
+        source_type: axis
+        source_index: 1
+        scale: 0.5
+        action:
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
+      - source_type: button
+        source_index: 5
+        action:
+          type: modifier
+          targets:
+            - mapping_id: "forward_movement"
+          scale_multiplier: 2.0
+      - source_type: axis
+        source_index: 6
+        action:
+          type: modifier
+          targets:
+            - source:
+                type: axis
+                index: 1
+          scale_multiplier: 3.0
+          apply_gradually: true
+"#;
+        
+        let mut temp_file = NamedTempFile::new().unwrap();
+        write!(temp_file, "{}", yaml_content).unwrap();
+        
+        let profile = load_profile_from_yaml_file(temp_file.path(), None).unwrap();
+        
+        assert_eq!(profile.name, "test");
+        assert_eq!(profile.input_mappings.len(), 3);
+        
+        // Check first mapping has ID
+        assert_eq!(profile.input_mappings[0].id, Some("forward_movement".to_string()));
+        
+        // Check modifier actions
+        match &profile.input_mappings[1].action {
+            ActionType::Modifier { targets, scale_multiplier, .. } => {
+                assert_eq!(targets.len(), 1);
+                assert_eq!(*scale_multiplier, Some(2.0));
+            }
+            _ => panic!("Expected Modifier action"),
+        }
+        
+        match &profile.input_mappings[2].action {
+            ActionType::Modifier { targets, scale_multiplier, apply_gradually, .. } => {
+                assert_eq!(targets.len(), 1);
+                assert_eq!(*scale_multiplier, Some(3.0));
+                assert_eq!(*apply_gradually, true);
+            }
+            _ => panic!("Expected Modifier action"),
         }
     }
 }

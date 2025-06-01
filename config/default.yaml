@@ -1,5 +1,14 @@
 # Joy Message Router Configuration
 # This file defines profiles for routing joystick inputs to ROS messages
+#
+# Supported action types:
+# - publish: Publish values to ROS topics
+# - call_service: Call ROS services 
+# - modifier: Dynamically modify other mappings' scale, offset, and deadzone
+#
+# Modifier targets can be specified by:
+# - mapping_id: Target specific mappings by their ID
+# - source: Target all mappings from a specific source (axis/button)
 
 # Default profile to use when none is specified
 default_profile: "teleop"
@@ -90,6 +99,84 @@ profiles:
           type: call_service
           service_name: "/trigger_action"
           service_type: "std_srvs/srv/Trigger"
+
+  # Profile with modifier support for dynamic control
+  teleop_with_modifiers:
+    input_mappings:
+      # Forward/backward movement with ID for modifier targeting
+      - id: "forward_movement"
+        source_type: axis
+        source_index: 1
+        scale: 0.5
+        offset: 0.0
+        deadzone: 0.1
+        action:
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "linear.x"
+      
+      # Rotation with ID for modifier targeting
+      - id: "rotation"
+        source_type: axis
+        source_index: 3
+        scale: 0.8
+        offset: 0.0
+        deadzone: 0.1
+        action:
+          type: publish
+          topic: "/cmd_vel"
+          message_type: "geometry_msgs/msg/Twist"
+          field: "angular.z"
+      
+      # R1 button - Turbo mode (doubles speed)
+      - source_type: button
+        source_index: 5
+        action:
+          type: modifier
+          targets:
+            - mapping_id: "forward_movement"
+            - mapping_id: "rotation"
+          scale_multiplier: 2.0
+      
+      # L1 button - Precision mode (30% speed)
+      - source_type: button
+        source_index: 4
+        action:
+          type: modifier
+          targets:
+            - mapping_id: "forward_movement"
+            - mapping_id: "rotation"
+          scale_multiplier: 0.3
+          deadzone_override: 0.05  # Reduce deadzone for fine control
+      
+      # Right trigger - Variable speed boost
+      - source_type: axis
+        source_index: 5
+        scale: 1.0
+        deadzone: 0.1
+        action:
+          type: modifier
+          targets:
+            - source:
+                type: axis
+                index: 1  # Modify left stick Y
+          scale_multiplier: 3.0   # Up to 3x speed at full trigger
+          apply_gradually: true   # Scale based on trigger position
+      
+      # X button - Emergency stop (zero all movement)
+      - source_type: button
+        source_index: 0
+        action:
+          type: modifier
+          targets:
+            - source:
+                type: axis
+                index: 1  # Left stick Y
+            - source:
+                type: axis
+                index: 3  # Right stick X
+          scale_multiplier: 0.0   # Zero out movement
 
   # Example profile with multiple output types
   multi_output:

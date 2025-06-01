@@ -15,8 +15,40 @@ pub enum InputSource {
     Button(usize),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputSourceType {
+    Axis,
+    Button,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ModifierTarget {
+    /// Target a specific mapping by its ID
+    MappingId {
+        mapping_id: String,
+    },
+    /// Target mappings by their source
+    Source {
+        source: SourceTarget,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceTarget {
+    #[serde(rename = "type")]
+    pub source_type: InputSourceType,
+    #[serde(rename = "index")]
+    pub source_index: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputMapping {
+    /// Optional unique identifier for this mapping
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    
     pub source: InputSource,
     pub action: ActionType,
 
@@ -58,6 +90,24 @@ pub enum ActionType {
         /// Service type is needed for initial client creation and recreation after use
         /// e.g., "std_srvs/srv/Trigger", "std_srvs/srv/Empty"
         service_type: String,
+    },
+    
+    /// Modify scale, offset, and deadzone of other mappings
+    Modifier {
+        /// Which mappings to modify
+        targets: Vec<ModifierTarget>,
+        /// Multiply target mapping's scale by this value
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale_multiplier: Option<f64>,
+        /// Add this to target mapping's offset
+        #[serde(skip_serializing_if = "Option::is_none")]
+        offset_delta: Option<f64>,
+        /// Override target mapping's deadzone
+        #[serde(skip_serializing_if = "Option::is_none")]
+        deadzone_override: Option<f64>,
+        /// For axis modifiers: interpolate based on axis value
+        #[serde(default)]
+        apply_gradually: bool,
     },
 }
 
@@ -150,6 +200,7 @@ mod tests {
     #[test]
     fn test_axis_input_processing() {
         let mapping = InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -170,6 +221,7 @@ mod tests {
     #[test]
     fn test_button_input_processing() {
         let mapping = InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::Publish {
                 topic: "test".to_string(),
@@ -193,6 +245,7 @@ mod tests {
         let mut profile = Profile::new("test".to_string());
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -206,6 +259,7 @@ mod tests {
         });
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -226,6 +280,7 @@ mod tests {
         let mut profile = Profile::new("test".to_string());
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -246,6 +301,7 @@ mod tests {
         let mut profile = Profile::new("test".to_string());
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Axis(0),
             action: ActionType::Publish {
                 topic: "/cmd_vel".to_string(),
@@ -266,6 +322,7 @@ mod tests {
         let mut profile = Profile::new("test".to_string());
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::Publish {
                 topic: "test".to_string(),
@@ -279,6 +336,7 @@ mod tests {
         });
 
         profile.input_mappings.push(InputMapping {
+            id: None,
             source: InputSource::Button(0),
             action: ActionType::CallService {
                 service_name: "test".to_string(),
@@ -295,6 +353,7 @@ mod tests {
     #[test]
     fn test_service_call_action() {
         let mapping = InputMapping {
+            id: None,
             source: InputSource::Button(1),
             action: ActionType::CallService {
                 service_name: "/reset_robot".to_string(),

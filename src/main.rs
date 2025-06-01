@@ -23,6 +23,7 @@ mod clients;
 mod config;
 mod joy_msg_tracker;
 mod logging;
+mod modifier;
 mod profile;
 mod publishers;
 mod yaml_loader;
@@ -33,6 +34,7 @@ use clients::{ServiceClient, ServiceClients};
 use config::{ActionType, InputMapping, InputSource};
 use joy_msg_tracker::JoyMsgTracker;
 use logging::{log_error, LogContext};
+use modifier::{collect_active_modifiers, apply_modifiers_to_mapping};
 use profile::{is_enabled, load_profile_from_params};
 use yaml_loader::load_profile_from_yaml_file;
 
@@ -74,11 +76,41 @@ fn process_input_mappings(
     clients: &mut ServiceClients,
     logger: &Logger,
 ) -> Result<()> {
+    // Pass 1: Collect active modifiers
+    let active_modifiers = collect_active_modifiers(input_mappings, tracker);
+    
+    if !active_modifiers.is_empty() {
+        pr_debug!(logger, "Active modifiers: {}", active_modifiers.len());
+    }
+    
+    // Pass 2: Process mappings with modifiers applied
     for mapping in input_mappings {
-        let (input_value, is_active, just_activated) = match mapping.source {
+        // Skip modifier mappings - they don't produce output themselves
+        if matches!(mapping.action, ActionType::Modifier { .. }) {
+            continue;
+        }
+        
+        // Apply modifiers to get the effective mapping
+        let effective_mapping = apply_modifiers_to_mapping(mapping, &active_modifiers, input_mappings);
+        
+        // Log if mapping was modified
+        if effective_mapping.scale != mapping.scale 
+            || effective_mapping.offset != mapping.offset 
+            || effective_mapping.deadzone != mapping.deadzone {
+            pr_debug!(
+                logger, 
+                "Mapping {:?} modified: scale {} -> {}, offset {} -> {}, deadzone {} -> {}",
+                mapping.source,
+                mapping.scale, effective_mapping.scale,
+                mapping.offset, effective_mapping.offset,
+                mapping.deadzone, effective_mapping.deadzone
+            );
+        }
+        
+        let (input_value, is_active, just_activated) = match effective_mapping.source {
             InputSource::Axis(idx) => {
                 let value = tracker.get_axis(idx).unwrap_or(0.0) as f64;
-                let processed = mapping.process_value(value);
+                let processed = effective_mapping.process_value(value);
                 (value, processed.abs() > 0.0, false)
             }
             InputSource::Button(idx) => {
@@ -93,16 +125,16 @@ fn process_input_mappings(
             pr_debug!(
                 logger,
                 "Skipping inactive mapping: {:?} with value {}",
-                mapping.source,
+                effective_mapping.source,
                 input_value
             );
             continue; // Skip inactive mappings
         }
 
         // Calculate processed value with scale, offset, and deadzone
-        let processed_value = mapping.process_value(input_value);
+        let processed_value = effective_mapping.process_value(input_value);
 
-        match &mapping.action {
+        match &effective_mapping.action {
             ActionType::Publish {
                 topic,
                 message_type,
@@ -994,5 +1026,67 @@ mod tests {
         tracker.update_buttons(&[1, 0, 0, 0, 1]);
         assert!(!tracker.just_pressed(0)); // Not just pressed anymore
         assert!(is_enabled(&profile, &tracker));
+    }
+    
+    #[test]
+    fn test_modifier_functionality() {
+        use crate::modifier::{collect_active_modifiers, apply_modifiers_to_mapping};
+        use crate::config::{ModifierTarget, InputSourceType, SourceTarget};
+        
+        // Create a profile with a movement mapping and a modifier
+        let mut profile = Profile::new("test".to_string());
+        
+        // Movement mapping
+        profile.input_mappings.push(InputMapping {
+            id: Some("forward".to_string()),
+            source: InputSource::Axis(1),
+            action: ActionType::Publish {
+                topic: "/cmd_vel".to_string(),
+                message_type: "geometry_msgs/msg/Twist".to_string(),
+                field: Some("linear.x".to_string()),
+                once: false,
+            },
+            scale: 0.5,
+            offset: 0.0,
+            deadzone: 0.1,
+        });
+        
+        // Turbo button modifier
+        profile.input_mappings.push(InputMapping {
+            id: None,
+            source: InputSource::Button(5),
+            action: ActionType::Modifier {
+                targets: vec![ModifierTarget::MappingId { 
+                    mapping_id: "forward".to_string() 
+                }],
+                scale_multiplier: Some(2.0),
+                offset_delta: None,
+                deadzone_override: None,
+                apply_gradually: false,
+            },
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.0,
+        });
+        
+        let mut tracker = JoyMsgTracker::new();
+        tracker.update_axes(&[0.0, 0.5]);
+        
+        // Test without modifier
+        tracker.update_buttons(&[0, 0, 0, 0, 0, 0]);
+        let modifiers = collect_active_modifiers(&profile.input_mappings, &tracker);
+        assert_eq!(modifiers.len(), 0);
+        
+        let forward_mapping = &profile.input_mappings[0];
+        let modified = apply_modifiers_to_mapping(forward_mapping, &modifiers, &profile.input_mappings);
+        assert_eq!(modified.scale, 0.5);
+        
+        // Test with modifier active
+        tracker.update_buttons(&[0, 0, 0, 0, 0, 1]);
+        let modifiers = collect_active_modifiers(&profile.input_mappings, &tracker);
+        assert_eq!(modifiers.len(), 1);
+        
+        let modified = apply_modifiers_to_mapping(forward_mapping, &modifiers, &profile.input_mappings);
+        assert_eq!(modified.scale, 1.0); // 0.5 * 2.0
     }
 }
