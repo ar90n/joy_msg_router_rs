@@ -8,10 +8,69 @@ and the joy_msg_router node for processing the joystick commands.
 
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, GroupAction
+from launch.actions import DeclareLaunchArgument, LogInfo, GroupAction, OpaqueFunction
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, PushRosNamespace
 from launch_ros.substitutions import FindPackageShare
+
+
+def launch_setup(context, *args, **kwargs):
+    """Setup function to handle parameter resolution for joy_msg_router."""
+    namespace = LaunchConfiguration('namespace').perform(context)
+    joy_topic = LaunchConfiguration('joy_topic').perform(context)
+    cmd_vel_topic = LaunchConfiguration('cmd_vel_topic').perform(context)
+    param_file = LaunchConfiguration('param_file').perform(context)
+    config_file = LaunchConfiguration('config_file').perform(context)
+    profile_name = LaunchConfiguration('profile_name').perform(context)
+    device = LaunchConfiguration('device').perform(context)
+    deadzone = LaunchConfiguration('deadzone').perform(context)
+    autorepeat_rate = LaunchConfiguration('autorepeat_rate').perform(context)
+    
+    # Prepare parameters for joy_msg_router
+    parameters = []
+    
+    # If config_file is specified, add it as a parameter
+    if config_file:
+        if not os.path.isabs(config_file):
+            config_file = os.path.abspath(config_file)
+        parameters.append({'config_file': config_file})
+        if profile_name:
+            parameters.append({'profile_name': profile_name})
+    elif param_file:
+        # Convert relative path to absolute if needed
+        if not os.path.isabs(param_file):
+            param_file = os.path.abspath(param_file)
+        parameters.append(param_file)
+    
+    # Joy node for reading joystick input
+    joy_node = Node(
+        package='joy',
+        executable='joy_node',
+        name='joy_node',
+        namespace=namespace,
+        parameters=[
+            {'device': device},
+            {'deadzone': float(deadzone)},
+            {'autorepeat_rate': float(autorepeat_rate)},
+        ],
+        output='screen'
+    )
+    
+    # Joy message router node
+    joy_router_node = Node(
+        package='joy_msg_router_rs',
+        executable='joy_msg_router',
+        name='joy_msg_router',
+        namespace=namespace,
+        parameters=parameters,
+        remappings=[
+            ('joy', joy_topic),
+            ('cmd_vel', cmd_vel_topic),
+        ],
+        output='screen'
+    )
+    
+    return [joy_node, joy_router_node]
 
 
 def generate_launch_description():
@@ -58,56 +117,26 @@ def generate_launch_description():
         description='Path to ROS parameter file (YAML) for joy_msg_router. If empty, parameters must be set separately.'
     )
     
-    # Get launch configurations
-    device = LaunchConfiguration('device')
-    namespace = LaunchConfiguration('namespace')
-    cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
-    deadzone = LaunchConfiguration('deadzone')
-    autorepeat_rate = LaunchConfiguration('autorepeat_rate')
-    param_file = LaunchConfiguration('param_file')
-    
-    # Joy node for reading joystick input
-    joy_node = Node(
-        package='joy',
-        executable='joy_node',
-        name='joy_node',
-        parameters=[
-            {'device': device},
-            {'deadzone': deadzone},
-            {'autorepeat_rate': autorepeat_rate},
-        ],
-        output='screen'
+    config_file_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value='',
+        description='Path to hierarchical YAML configuration file. Takes precedence over param_file.'
     )
     
-    # Joy message router node
-    joy_router_node = Node(
-        package='joy_msg_router_rs',
-        executable='joy_msg_router',
-        name='joy_msg_router',
-        parameters=[param_file] if param_file else [],
-        remappings=[
-            ('cmd_vel', cmd_vel_topic),
-        ],
-        output='screen'
+    profile_name_arg = DeclareLaunchArgument(
+        'profile_name',
+        default_value='',
+        description='Profile name to use when loading from config_file.'
     )
     
-    # Group all nodes under namespace if provided
-    teleop_group = GroupAction(
-        actions=[
-            PushRosNamespace(namespace),
-            joy_node,
-            joy_router_node,
-        ]
+    joy_topic_arg = DeclareLaunchArgument(
+        'joy_topic',
+        default_value='/joy',
+        description='Joy topic name'
     )
     
-    # Log launch information
-    launch_info = LogInfo(
-        msg=[
-            'Starting teleoperation with device: ', device,
-            ', namespace: ', namespace,
-            ', cmd_vel topic: ', cmd_vel_topic
-        ]
-    )
+    # Use OpaqueFunction to handle parameter resolution
+    launch_setup_function = OpaqueFunction(function=launch_setup)
     
     return LaunchDescription([
         # Declare arguments
@@ -117,10 +146,10 @@ def generate_launch_description():
         deadzone_arg,
         autorepeat_rate_arg,
         param_file_arg,
+        config_file_arg,
+        profile_name_arg,
+        joy_topic_arg,
         
-        # Log info
-        launch_info,
-        
-        # Launch group
-        teleop_group,
+        # Launch nodes using OpaqueFunction
+        launch_setup_function,
     ])

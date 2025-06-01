@@ -13,25 +13,31 @@ Launches only the joy_msg_router node. Useful when you already have a joy node r
 ros2 launch joy_msg_router_rs joy_router.launch.py
 
 # Launch with specific profile
-ros2 launch joy_msg_router_rs joy_router.launch.py profile:=teleop_safe
+ros2 launch joy_msg_router_rs joy_router.launch.py profile_name:=teleop_safe
 
 # Launch with custom configuration file
 ros2 launch joy_msg_router_rs joy_router.launch.py config_file:=/path/to/config.yaml
+
+# Launch with custom configuration and profile
+ros2 launch joy_msg_router_rs joy_router.launch.py config_file:=/path/to/config.yaml profile_name:=my_profile
 
 # Launch with custom topic names
 ros2 launch joy_msg_router_rs joy_router.launch.py joy_topic:=/custom_joy cmd_vel_topic:=/robot/cmd_vel
 
 # Launch in a namespace
 ros2 launch joy_msg_router_rs joy_router.launch.py namespace:=robot1
+
+# Using flat ROS2 parameters instead of config file
+ros2 launch joy_msg_router_rs joy_router.launch.py param_file:=/path/to/params.yaml
 ```
 
 **Parameters:**
-- `config_file`: Path to configuration file (default: uses package default)
-- `profile`: Profile to use from config file (default: "teleop")
+- `config_file`: Path to hierarchical YAML configuration file (default: empty, uses param_file)
+- `profile_name`: Profile to use from config file (default: uses default_profile from config)
+- `param_file`: Path to flat ROS2 parameter file (default: package default_params.yaml)
 - `namespace`: Namespace for the node (default: "")
 - `joy_topic`: Input joy topic (default: "/joy")
 - `cmd_vel_topic`: Output twist topic (default: "/cmd_vel")
-- `use_default_config`: Whether to use package default config (default: "true")
 
 ### joy_teleop.launch.py
 Complete teleoperation setup that launches both the joy node and joy_msg_router node.
@@ -45,13 +51,13 @@ ros2 launch joy_msg_router_rs joy_teleop.launch.py
 ros2 launch joy_msg_router_rs joy_teleop.launch.py device:=/dev/input/js1
 
 # Use safe teleoperation profile with deadman switch
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=teleop_safe
+ros2 launch joy_msg_router_rs joy_teleop.launch.py profile_name:=teleop_safe
 
-# Holonomic robot control
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=holonomic
+# Teleoperation with modifiers (turbo, precision modes)
+ros2 launch joy_msg_router_rs joy_teleop.launch.py profile_name:=teleop_with_modifiers
 
-# Drone/UAV control
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=drone
+# Custom configuration file
+ros2 launch joy_msg_router_rs joy_teleop.launch.py config_file:=/path/to/config.yaml
 
 # Multi-robot setup
 ros2 launch joy_msg_router_rs joy_teleop.launch.py namespace:=robot1 cmd_vel_topic:=/robot1/cmd_vel
@@ -59,8 +65,11 @@ ros2 launch joy_msg_router_rs joy_teleop.launch.py namespace:=robot1 cmd_vel_top
 
 **Parameters:**
 - `device`: Joystick device file (default: "/dev/input/js0")
-- `profile`: Joy router profile (default: "teleop")
+- `config_file`: Path to hierarchical YAML configuration file (default: empty)
+- `profile_name`: Profile to use from config file (default: uses default_profile)
+- `param_file`: Path to flat ROS2 parameter file (default: package default)
 - `namespace`: Namespace for all nodes (default: "")
+- `joy_topic`: Joy topic name (default: "/joy")
 - `cmd_vel_topic`: Output velocity topic (default: "/cmd_vel")
 - `deadzone`: Joystick deadzone (default: "0.1")
 - `autorepeat_rate`: Joy message repeat rate in Hz (default: "20.0")
@@ -74,7 +83,13 @@ ros2 launch joy_msg_router_rs joy_teleop.launch.py
 
 ### Safe Teleoperation with Deadman Switch
 ```bash
-ros2 launch joy_msg_router_rs joy_teleop.launch.py profile:=teleop_safe
+ros2 launch joy_msg_router_rs joy_teleop.launch.py profile_name:=teleop_safe
+```
+
+### Teleoperation with Modifiers
+```bash
+# Includes turbo mode (R1), precision mode (L1), and emergency stop (X)
+ros2 launch joy_msg_router_rs joy_teleop.launch.py profile_name:=teleop_with_modifiers
 ```
 
 ### Multi-Robot Control
@@ -96,7 +111,7 @@ ros2 launch joy_msg_router_rs joy_teleop.launch.py \
 ```bash
 ros2 launch joy_msg_router_rs joy_router.launch.py \
   config_file:=/path/to/my_robot_config.yaml \
-  profile:=my_custom_profile
+  profile_name:=my_custom_profile
 ```
 
 ## Troubleshooting

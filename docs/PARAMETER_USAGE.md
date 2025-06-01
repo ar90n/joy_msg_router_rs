@@ -1,155 +1,135 @@
-# ROS2 Parameter Server Integration
+# ROS2 Parameter Usage
 
-The joy_msg_router_rs node now supports dynamic reconfiguration through ROS2 parameter server integration.
+The joy_msg_router_rs node supports configuration through ROS2 parameters in two ways:
+1. **Hierarchical YAML configuration files** (recommended)
+2. **Flat ROS2 parameters** (for runtime configuration)
+
+## Configuration Methods
+
+### Method 1: Using Configuration Files (Recommended)
+
+The node can load hierarchical YAML configuration files using the `config_file` parameter:
+
+```bash
+ros2 run joy_msg_router_rs joy_msg_router --ros-args -p config_file:=/path/to/config.yaml
+```
+
+You can also specify a profile from the configuration file:
+
+```bash
+ros2 run joy_msg_router_rs joy_msg_router --ros-args \
+  -p config_file:=/path/to/config.yaml \
+  -p profile_name:=teleop_with_modifiers
+```
+
+### Method 2: Direct ROS2 Parameters
+
+For runtime configuration or when not using a config file, you can specify parameters directly:
+
+```bash
+ros2 run joy_msg_router_rs joy_msg_router --ros-args \
+  -p profile_name:=custom \
+  -p enable_button:=4 \
+  -p input_mappings.0.source_type:=axis \
+  -p input_mappings.0.source_index:=1 \
+  -p input_mappings.0.action_type:=publish \
+  -p input_mappings.0.topic:=/cmd_vel \
+  -p input_mappings.0.message_type:="geometry_msgs/msg/Twist" \
+  -p input_mappings.0.field:="linear.x" \
+  -p input_mappings.0.scale:=0.5
+```
 
 ## Available Parameters
 
-### Core Parameters
+### Configuration Selection
+- **`config_file`** (string): Path to hierarchical YAML configuration file
+- **`profile_name`** (string): Name of the profile to use (required if not using config_file)
 
-- **`active_profile`** (string): Name of the currently active profile
-- **`timer_rate_hz`** (double, 1.0-1000.0): Timer callback frequency in Hz
-- **`global_deadzone`** (double, 0.0-1.0): Global deadzone override for all axes (-1 to use profile setting)
-- **`global_scale_factor`** (double, 0.1-10.0): Global scale factor multiplier for all axes
-- **`enable_button_override`** (integer, -1-15): Override enable button (-1 to use profile setting)
-- **`log_level`** (string): Logging verbosity level (DEBUG, INFO, WARN, ERROR)
-- **`emergency_stop`** (boolean): Emergency stop - disables all output when true
+### Profile Parameters
+- **`enable_button`** (integer): Button that must be held to enable the profile
 
-### Read-Only Parameters
+### Input Mapping Parameters
 
-- **`config_file`** (string): Path to the configuration file
-- **`available_profiles`** (string array): List of available profiles in the configuration
+For each mapping (indexed from 0):
+- **`input_mappings.N.id`** (string): Optional unique identifier
+- **`input_mappings.N.source_type`** (string): "axis" or "button"
+- **`input_mappings.N.source_index`** (integer): 0-based index
+- **`input_mappings.N.scale`** (double): Scale factor (default: 1.0)
+- **`input_mappings.N.offset`** (double): Offset value (default: 0.0)
+- **`input_mappings.N.deadzone`** (double): Deadzone threshold (default: 0.1)
+- **`input_mappings.N.action_type`** (string): "publish", "call_service", or "modifier"
 
-## Usage Examples
+#### For Publish Actions:
+- **`input_mappings.N.topic`** (string): Target topic
+- **`input_mappings.N.message_type`** (string): Message type (e.g., "geometry_msgs/msg/Twist")
+- **`input_mappings.N.field`** (string): Optional field name
+- **`input_mappings.N.once`** (boolean): Publish once or continuously
 
-### Using ROS2 Command Line Tools
+#### For Service Actions:
+- **`input_mappings.N.service_name`** (string): Service name
+- **`input_mappings.N.service_type`** (string): Service type
 
-```bash
-# List all parameters
-ros2 param list /joy_msg_router
+#### For Modifier Actions:
+- **`input_mappings.N.targets.M.mapping_id`** (string): Target by ID
+- **`input_mappings.N.targets.M.source_type`** (string): Target by source type
+- **`input_mappings.N.targets.M.source_index`** (integer): Target by source index
+- **`input_mappings.N.scale_multiplier`** (double): Scale multiplier
+- **`input_mappings.N.offset_delta`** (double): Offset delta
+- **`input_mappings.N.deadzone_override`** (double): Deadzone override
+- **`input_mappings.N.apply_gradually`** (boolean): Gradual application
 
-# Get parameter value
-ros2 param get /joy_msg_router active_profile
+## Complete Example
 
-# Set parameter value
-ros2 param set /joy_msg_router global_scale_factor 0.5
+### Flat Parameter File Example
 
-# Emergency stop
-ros2 param set /joy_msg_router emergency_stop true
-
-# Switch profile
-ros2 param set /joy_msg_router active_profile drone
-
-# Adjust timer rate
-ros2 param set /joy_msg_router timer_rate_hz 100.0
-```
-
-### Parameter Validation
-
-All parameters include validation constraints:
-
-- **Numeric ranges**: Min/max values enforced
-- **String constraints**: Valid values enumerated
-- **Array limits**: Maximum length restrictions
-- **Read-only protection**: Certain parameters cannot be modified
-
-Invalid parameter changes will be rejected with descriptive error messages.
-
-## Dynamic Reconfiguration Features
-
-### Runtime Profile Switching
-
-Switch between different joystick profiles without restarting the node:
-
-```bash
-# Switch to teleop profile
-ros2 param set /joy_msg_router active_profile teleop
-
-# Switch to drone profile  
-ros2 param set /joy_msg_router active_profile drone
-```
-
-### Global Overrides
-
-Override profile-specific settings globally:
-
-```bash
-# Apply 50% deadzone to all axes
-ros2 param set /joy_msg_router global_deadzone 0.5
-
-# Reduce all movements by half
-ros2 param set /joy_msg_router global_scale_factor 0.5
-
-# Override enable button to button 5
-ros2 param set /joy_msg_router enable_button_override 5
-```
-
-### Emergency Control
-
-```bash
-# Emergency stop (disables all output)
-ros2 param set /joy_msg_router emergency_stop true
-
-# Resume operation
-ros2 param set /joy_msg_router emergency_stop false
-```
-
-## Integration with ROS2 Tools
-
-### Parameter Files
-
-Save and load parameter configurations:
-
-```bash
-# Save current parameters
-ros2 param dump /joy_msg_router > joy_router_params.yaml
-
-# Load parameters from file
-ros2 param load /joy_msg_router joy_router_params.yaml
+```yaml
+joy_msg_router:
+  ros__parameters:
+    profile_name: "custom_teleop"
+    enable_button: 4
+    
+    # Forward/backward movement
+    input_mappings.0.id: "forward"
+    input_mappings.0.source_type: "axis"
+    input_mappings.0.source_index: 1
+    input_mappings.0.scale: 0.5
+    input_mappings.0.deadzone: 0.1
+    input_mappings.0.action_type: "publish"
+    input_mappings.0.topic: "/cmd_vel"
+    input_mappings.0.message_type: "geometry_msgs/msg/Twist"
+    input_mappings.0.field: "linear.x"
+    
+    # Turbo modifier
+    input_mappings.1.source_type: "button"
+    input_mappings.1.source_index: 5
+    input_mappings.1.action_type: "modifier"
+    input_mappings.1.targets.0.mapping_id: "forward"
+    input_mappings.1.scale_multiplier: 2.0
 ```
 
 ### Launch File Integration
 
-```xml
-<launch>
-  <node pkg="joy_msg_router_rs" exec="joy_msg_router" name="joy_msg_router">
-    <param name="active_profile" value="drone"/>
-    <param name="timer_rate_hz" value="50.0"/>
-    <param name="global_scale_factor" value="0.8"/>
-    <param name="log_level" value="INFO"/>
-  </node>
-</launch>
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+def generate_launch_description():
+    return LaunchDescription([
+        Node(
+            package='joy_msg_router_rs',
+            executable='joy_msg_router',
+            name='joy_msg_router',
+            parameters=[{
+                'config_file': '/path/to/config.yaml',
+                'profile_name': 'teleop_with_modifiers'
+            }]
+        )
+    ])
 ```
 
-## Monitoring Parameter Changes
+## Tips
 
-The node logs all parameter changes with timestamps:
-
-```
-[INFO] [timestamp] [parameter_manager]: Parameter 'active_profile' changed from 'teleop' to 'drone'
-[INFO] [timestamp] [parameter_manager]: Parameter 'emergency_stop' changed from 'false' to 'true'
-```
-
-## Configuration Persistence
-
-Parameters are applied dynamically but do not persist across node restarts unless:
-
-1. Saved to parameter files and loaded via launch files
-2. Set through rosparam server before node startup
-3. Configured in launch files or configuration files
-
-## Benefits
-
-- **No restart required**: Change behavior without stopping the node
-- **Real-time tuning**: Adjust sensitivity and timing on-the-fly
-- **Emergency control**: Quick disable/enable capabilities
-- **Profile switching**: Adapt to different joystick configurations
-- **Debugging support**: Dynamic log level adjustment
-- **ROS2 integration**: Works with standard ROS2 parameter tools
-
-## Implementation Notes
-
-- Parameter changes are validated before application
-- Invalid changes are rejected with error messages
-- Emergency stop takes priority over all other settings
-- Parameter overrides are applied in addition to profile settings
-- Configuration reloading updates available profiles list
+1. **Config File vs Parameters**: Use config files for complex setups, direct parameters for simple cases
+2. **Parameter Priority**: If both config_file and individual parameters are set, config_file takes precedence
+3. **Validation**: The node validates all parameters at startup and reports errors clearly
+4. **Modifiers**: When using modifiers via parameters, ensure target mappings have IDs or use source targeting

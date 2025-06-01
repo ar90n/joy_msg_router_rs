@@ -15,7 +15,7 @@ A ROS2 node written in Rust that routes joystick (Joy) messages to various ROS m
 - **📤 Universal Message Publishing**: Publishes any supported ROS message type dynamically
 - **🔧 Service Calling**: Map buttons to ROS service calls
 - **🎯 Dynamic Modifiers**: Change control behavior on-the-fly (turbo, precision modes)
-- **⚙️ Flexible Configuration**: YAML-based profiles or ROS2 parameters
+- **⚙️ Flexible Configuration**: Hierarchical YAML profiles or flat ROS2 parameters
 - **🛡️ Safety Features**: Enable button support and deadzone filtering
 - **🔄 Unified Input Handling**: Both axes and buttons can trigger any action
 - **📦 Runtime Type Selection**: Message types specified in configuration
@@ -43,24 +43,37 @@ source install/setup.bash
 
 #### Option 1: Complete Teleoperation Setup
 ```bash
-# Launches both joy node and joy_msg_router with config file
+# Launches both joy node and joy_msg_router with default configuration
+ros2 launch joy_msg_router_rs joy_teleop.launch.py
+
+# Use a specific profile from the default config
+ros2 launch joy_msg_router_rs joy_teleop.launch.py profile_name:=teleop_with_modifiers
+
+# Use a custom config file
 ros2 launch joy_msg_router_rs joy_teleop.launch.py config_file:=/path/to/config.yaml
 ```
 
 #### Option 2: Joy Router Only
 ```bash
 # If you already have a joy node running
-ros2 launch joy_msg_router_rs joy_router.launch.py config_file:=/path/to/config.yaml
+ros2 launch joy_msg_router_rs joy_router.launch.py
+
+# With custom configuration
+ros2 launch joy_msg_router_rs joy_router.launch.py config_file:=/path/to/config.yaml profile_name:=my_profile
 ```
 
 #### Option 3: Direct Node Execution
 ```bash
-# Run with config file (hierarchical YAML)
+# Run with hierarchical config file (recommended)
 ros2 run joy_msg_router_rs joy_msg_router --ros-args -p config_file:=/path/to/config.yaml
 
-# Or set parameters individually
+# Specify a profile from the config file
 ros2 run joy_msg_router_rs joy_msg_router --ros-args \
-  -p profile_name:=teleop_safe \
+  -p config_file:=config.yaml -p profile_name:=teleop_with_modifiers
+
+# Or use flat ROS2 parameters directly
+ros2 run joy_msg_router_rs joy_msg_router --ros-args \
+  -p profile_name:=custom \
   -p enable_button:=4 \
   -p input_mappings.0.source_type:=axis \
   -p input_mappings.0.source_index:=1 \
@@ -175,6 +188,14 @@ joy_msg_router:
      - `std_srvs/srv/Empty`: Service with no request/response data
    - Services are called when the button is pressed (on rising edge)
 
+3. **modifier**: Dynamically modify other mappings' parameters
+   - `targets`: List of target specifications (mapping ID or source characteristics)
+   - `scale_multiplier`: Multiply target's scale value
+   - `offset_delta`: Add to target's offset value
+   - `deadzone_override`: Override target's deadzone
+   - `apply_gradually`: For axis modifiers, interpolate based on axis position
+   - See [MODIFIER_USAGE.md](docs/MODIFIER_USAGE.md) for detailed examples
+
 ### Input Processing
 
 - **Axes**: Analog inputs with deadzone, scaling, and offset
@@ -211,18 +232,16 @@ joy_msg_router:
 
 ## Example Configurations
 
-### Controller Examples
-- **PlayStation 4**: `config/examples/ps4_controller.yaml` - Complete PS4 controller mappings
-- **Xbox**: `config/examples/xbox_controller.yaml` - Xbox One/Series controller profiles
+The default configuration file `config/default.yaml` includes several example profiles:
+- **teleop**: Basic teleoperation without safety features
+- **teleop_safe**: Teleoperation with deadman switch (L1 button must be held)
+- **teleop_with_modifiers**: Advanced setup with turbo mode (R1), precision mode (L1), and emergency stop (X)
+- **multi_output**: Examples of publishing to different message types
 
-### Feature Examples
-- **Generic Messages**: `config/examples/generic_messages.yaml` - Publishing various message types
-- **Service Calls**: `config/examples/service_calls.yaml` - Mapping buttons to service calls
-- **Unified Mappings**: `config/example_unified.yaml` - Axes and buttons working together
-
-### Configuration Methods
-- **Profile-based**: `config/default.yaml` - YAML profiles (recommended)
-- **Parameter-based**: `config/params_example.yaml` - ROS2 parameter format
+For flat ROS2 parameter format examples, see:
+- `config/default_params.yaml` - Basic flat parameter format
+- `config/teleop_safe_params.yaml` - Safe teleoperation parameters
+- `config/teleop_with_modifiers_params.yaml` - Parameters with modifier support
 
 ## Architecture
 
@@ -230,6 +249,7 @@ This node is built using:
 - **safe_drive**: Rust bindings for ROS2
 - **Runtime message type selection**: Publishers are created dynamically based on configuration
 - **Unified input processing**: Single processing loop handles all input types
+- **Two-pass modifier processing**: Collect active modifiers, then apply to mappings
 - **Accumulation for Twist messages**: Multiple inputs can contribute to a single Twist message
 - **Fire-and-forget service calling**: Service calls don't block the main loop, ensuring real-time joystick responsiveness
 
@@ -237,7 +257,8 @@ This node is built using:
 1. **JoyMsgTracker**: Tracks joystick state and detects changes
 2. **Publishers**: Manages all configured publishers with runtime type selection
 3. **ServiceClients**: Handles service client creation and calls
-4. **Profile**: Configuration structure supporting both YAML and ROS parameters
+4. **Profile**: Configuration structure supporting both hierarchical YAML and flat ROS parameters
+5. **Modifier System**: Dynamic parameter modification based on joystick input
 
 ## Development
 
