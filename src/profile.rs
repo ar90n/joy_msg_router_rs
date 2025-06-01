@@ -1,4 +1,6 @@
-use crate::config::{ActionType, InputMapping, InputSource, InputSourceType, ModifierTarget, Profile, SourceTarget};
+use crate::config::{
+    ActionType, InputMapping, InputSource, InputSourceType, ModifierTarget, Profile, SourceTarget,
+};
 use crate::joy_msg_tracker::JoyMsgTracker;
 use anyhow::{anyhow, Result};
 use safe_drive::parameter::{ParameterServer, Value};
@@ -33,7 +35,7 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
         {
             break;
         }
-        
+
         // Parse optional id
         let id = params_guard
             .get_parameter(&format!("{}.id", prefix))
@@ -153,29 +155,37 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
                 // Parse targets - for ROS2 params we'll use a simplified format
                 let mut targets = Vec::new();
                 let mut target_idx = 0;
-                
+
                 loop {
                     let target_prefix = format!("{}.targets.{}", prefix, target_idx);
-                    
+
                     // Check if target exists by looking for either mapping_id or source_type
-                    if params_guard.get_parameter(&format!("{}.mapping_id", target_prefix)).is_none()
-                        && params_guard.get_parameter(&format!("{}.source_type", target_prefix)).is_none() {
+                    if params_guard
+                        .get_parameter(&format!("{}.mapping_id", target_prefix))
+                        .is_none()
+                        && params_guard
+                            .get_parameter(&format!("{}.source_type", target_prefix))
+                            .is_none()
+                    {
                         break;
                     }
-                    
+
                     // Try mapping_id first
-                    if let Some(mapping_id_param) = params_guard.get_parameter(&format!("{}.mapping_id", target_prefix)) {
+                    if let Some(mapping_id_param) =
+                        params_guard.get_parameter(&format!("{}.mapping_id", target_prefix))
+                    {
                         if let Value::String(mapping_id) = &mapping_id_param.value {
-                            targets.push(ModifierTarget::MappingId { 
-                                mapping_id: mapping_id.clone() 
+                            targets.push(ModifierTarget::MappingId {
+                                mapping_id: mapping_id.clone(),
                             });
                         }
                     } else if let (Some(type_param), Some(index_param)) = (
                         params_guard.get_parameter(&format!("{}.source_type", target_prefix)),
-                        params_guard.get_parameter(&format!("{}.source_index", target_prefix))
+                        params_guard.get_parameter(&format!("{}.source_index", target_prefix)),
                     ) {
-                        if let (Value::String(source_type_str), Value::I64(source_index)) = 
-                            (&type_param.value, &index_param.value) {
+                        if let (Value::String(source_type_str), Value::I64(source_index)) =
+                            (&type_param.value, &index_param.value)
+                        {
                             let source_type = match source_type_str.as_str() {
                                 "axis" => InputSourceType::Axis,
                                 "button" => InputSourceType::Button,
@@ -185,35 +195,59 @@ pub fn load_profile_from_params(params: &ParameterServer) -> Result<Profile> {
                                 source: SourceTarget {
                                     source_type,
                                     source_index: *source_index as usize,
-                                }
+                                },
                             });
                         }
                     }
-                    
+
                     target_idx += 1;
                 }
-                
+
                 if targets.is_empty() {
                     continue; // Skip if no valid targets
                 }
-                
+
                 let scale_multiplier = params_guard
                     .get_parameter(&format!("{}.scale_multiplier", prefix))
-                    .and_then(|p| if let Value::F64(v) = p.value { Some(v) } else { None });
-                    
+                    .and_then(|p| {
+                        if let Value::F64(v) = p.value {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    });
+
                 let offset_delta = params_guard
                     .get_parameter(&format!("{}.offset_delta", prefix))
-                    .and_then(|p| if let Value::F64(v) = p.value { Some(v) } else { None });
-                    
+                    .and_then(|p| {
+                        if let Value::F64(v) = p.value {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    });
+
                 let deadzone_override = params_guard
                     .get_parameter(&format!("{}.deadzone_override", prefix))
-                    .and_then(|p| if let Value::F64(v) = p.value { Some(v) } else { None });
-                    
+                    .and_then(|p| {
+                        if let Value::F64(v) = p.value {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    });
+
                 let apply_gradually = params_guard
                     .get_parameter(&format!("{}.apply_gradually", prefix))
-                    .and_then(|p| if let Value::Bool(v) = p.value { Some(v) } else { None })
+                    .and_then(|p| {
+                        if let Value::Bool(v) = p.value {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or(false);
-                
+
                 ActionType::Modifier {
                     targets,
                     scale_multiplier,
@@ -285,34 +319,47 @@ pub fn is_enabled(profile: &Profile, joy_tracker: &JoyMsgTracker) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // Mock parameter storage for testing
     struct MockParams {
         params: std::collections::HashMap<String, Value>,
     }
-    
+
     impl MockParams {
         fn new() -> Self {
             Self {
                 params: std::collections::HashMap::new(),
             }
         }
-        
+
         fn add(&mut self, name: &str, value: Value) {
             self.params.insert(name.to_string(), value);
         }
-        
+
         fn to_profile(&self) -> Result<Profile> {
-            let profile_name = self.params.get("profile_name")
-                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+            let profile_name = self
+                .params
+                .get("profile_name")
+                .and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
                 .ok_or_else(|| anyhow!("profile_name not found"))?;
-            
+
             let mut profile = Profile::new(profile_name);
-            
+
             // Extract enable button
-            profile.enable_button = self.params.get("enable_button")
-                .and_then(|v| if let Value::I64(i) = v { Some(*i as usize) } else { None });
-            
+            profile.enable_button = self.params.get("enable_button").and_then(|v| {
+                if let Value::I64(i) = v {
+                    Some(*i as usize)
+                } else {
+                    None
+                }
+            });
+
             // Extract mappings
             let mut idx = 0;
             loop {
@@ -320,62 +367,169 @@ mod tests {
                 if !self.params.contains_key(&format!("{}.source_type", prefix)) {
                     break;
                 }
-                
-                let source_type = self.params.get(&format!("{}.source_type", prefix))
-                    .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None });
-                let source_index = self.params.get(&format!("{}.source_index", prefix))
-                    .and_then(|v| if let Value::I64(i) = v { Some(*i as usize) } else { None });
-                
+
+                let source_type = self
+                    .params
+                    .get(&format!("{}.source_type", prefix))
+                    .and_then(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.as_str())
+                        } else {
+                            None
+                        }
+                    });
+                let source_index = self
+                    .params
+                    .get(&format!("{}.source_index", prefix))
+                    .and_then(|v| {
+                        if let Value::I64(i) = v {
+                            Some(*i as usize)
+                        } else {
+                            None
+                        }
+                    });
+
                 if let (Some(source_type), Some(source_index)) = (source_type, source_index) {
                     let source = match source_type {
                         "axis" => InputSource::Axis(source_index),
                         "button" => InputSource::Button(source_index),
                         _ => continue,
                     };
-                    
-                    let action_type = self.params.get(&format!("{}.action_type", prefix))
-                        .and_then(|v| if let Value::String(s) = v { Some(s.as_str()) } else { None });
-                    
+
+                    let action_type = self
+                        .params
+                        .get(&format!("{}.action_type", prefix))
+                        .and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.as_str())
+                            } else {
+                                None
+                            }
+                        });
+
                     let action = match action_type {
                         Some("call_service") => {
-                            let service_name = self.params.get(&format!("{}.service_name", prefix))
-                                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                            let service_name = self
+                                .params
+                                .get(&format!("{}.service_name", prefix))
+                                .and_then(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .ok_or_else(|| anyhow!("Missing service_name"))?;
-                            let service_type = self.params.get(&format!("{}.service_type", prefix))
-                                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                            let service_type = self
+                                .params
+                                .get(&format!("{}.service_type", prefix))
+                                .and_then(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .ok_or_else(|| anyhow!("Missing service_type"))?;
-                            ActionType::CallService { service_name, service_type }
+                            ActionType::CallService {
+                                service_name,
+                                service_type,
+                            }
                         }
                         Some("publish") => {
-                            let topic = self.params.get(&format!("{}.topic", prefix))
-                                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                            let topic = self
+                                .params
+                                .get(&format!("{}.topic", prefix))
+                                .and_then(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .ok_or_else(|| anyhow!("Missing topic"))?;
-                            let message_type = self.params.get(&format!("{}.message_type", prefix))
-                                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                            let message_type = self
+                                .params
+                                .get(&format!("{}.message_type", prefix))
+                                .and_then(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .ok_or_else(|| anyhow!("Missing message_type"))?;
-                            let field = self.params.get(&format!("{}.field", prefix))
-                                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None });
-                            let once = self.params.get(&format!("{}.once", prefix))
-                                .and_then(|v| if let Value::Bool(b) = v { Some(*b) } else { None })
+                            let field =
+                                self.params.get(&format!("{}.field", prefix)).and_then(|v| {
+                                    if let Value::String(s) = v {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                });
+                            let once = self
+                                .params
+                                .get(&format!("{}.once", prefix))
+                                .and_then(|v| {
+                                    if let Value::Bool(b) = v {
+                                        Some(*b)
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .unwrap_or(true);
-                            ActionType::Publish { topic, message_type, field, once }
+                            ActionType::Publish {
+                                topic,
+                                message_type,
+                                field,
+                                once,
+                            }
                         }
                         _ => continue,
                     };
-                    
-                    let scale = self.params.get(&format!("{}.scale", prefix))
-                        .and_then(|v| if let Value::F64(f) = v { Some(*f) } else { None })
+
+                    let scale = self
+                        .params
+                        .get(&format!("{}.scale", prefix))
+                        .and_then(|v| {
+                            if let Value::F64(f) = v {
+                                Some(*f)
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(1.0);
-                    let offset = self.params.get(&format!("{}.offset", prefix))
-                        .and_then(|v| if let Value::F64(f) = v { Some(*f) } else { None })
+                    let offset = self
+                        .params
+                        .get(&format!("{}.offset", prefix))
+                        .and_then(|v| {
+                            if let Value::F64(f) = v {
+                                Some(*f)
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(0.0);
-                    let deadzone = self.params.get(&format!("{}.deadzone", prefix))
-                        .and_then(|v| if let Value::F64(f) = v { Some(*f) } else { None })
+                    let deadzone = self
+                        .params
+                        .get(&format!("{}.deadzone", prefix))
+                        .and_then(|v| {
+                            if let Value::F64(f) = v {
+                                Some(*f)
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(0.1);
-                    
-                    let id = self.params.get(&format!("{}.id", prefix))
-                        .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None });
-                    
+
+                    let id = self.params.get(&format!("{}.id", prefix)).and_then(|v| {
+                        if let Value::String(s) = v {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    });
+
                     profile.input_mappings.push(InputMapping {
                         id,
                         source,
@@ -385,111 +539,168 @@ mod tests {
                         deadzone,
                     });
                 }
-                
+
                 idx += 1;
             }
-            
+
             Ok(profile)
         }
     }
-    
+
     #[test]
     fn test_load_profile_with_service_mappings() {
         let mut params = MockParams::new();
-        
+
         // Set profile name
         params.add("profile_name", Value::String("test_profile".to_string()));
-        
+
         // Add a service mapping
-        params.add("input_mappings.0.source_type", Value::String("button".to_string()));
+        params.add(
+            "input_mappings.0.source_type",
+            Value::String("button".to_string()),
+        );
         params.add("input_mappings.0.source_index", Value::I64(3));
-        params.add("input_mappings.0.action_type", Value::String("call_service".to_string()));
-        params.add("input_mappings.0.service_name", Value::String("/reset_system".to_string()));
-        params.add("input_mappings.0.service_type", Value::String("std_srvs/srv/Trigger".to_string()));
+        params.add(
+            "input_mappings.0.action_type",
+            Value::String("call_service".to_string()),
+        );
+        params.add(
+            "input_mappings.0.service_name",
+            Value::String("/reset_system".to_string()),
+        );
+        params.add(
+            "input_mappings.0.service_type",
+            Value::String("std_srvs/srv/Trigger".to_string()),
+        );
         params.add("input_mappings.0.scale", Value::F64(1.0));
-        
+
         let profile = params.to_profile().unwrap();
-        
+
         assert_eq!(profile.name, "test_profile");
         assert_eq!(profile.input_mappings.len(), 1);
-        
+
         match &profile.input_mappings[0].action {
-            ActionType::CallService { service_name, service_type } => {
+            ActionType::CallService {
+                service_name,
+                service_type,
+            } => {
                 assert_eq!(service_name, "/reset_system");
                 assert_eq!(service_type, "std_srvs/srv/Trigger");
             }
             _ => panic!("Expected CallService action"),
         }
     }
-    
+
     #[test]
     fn test_load_profile_mixed_actions() {
         let mut params = MockParams::new();
-        
+
         params.add("profile_name", Value::String("mixed".to_string()));
         params.add("enable_button", Value::I64(4));
-        
+
         // Publish action
-        params.add("input_mappings.0.source_type", Value::String("axis".to_string()));
+        params.add(
+            "input_mappings.0.source_type",
+            Value::String("axis".to_string()),
+        );
         params.add("input_mappings.0.source_index", Value::I64(1));
-        params.add("input_mappings.0.action_type", Value::String("publish".to_string()));
-        params.add("input_mappings.0.topic", Value::String("/cmd_vel".to_string()));
-        params.add("input_mappings.0.message_type", Value::String("geometry_msgs/msg/Twist".to_string()));
-        params.add("input_mappings.0.field", Value::String("linear.x".to_string()));
+        params.add(
+            "input_mappings.0.action_type",
+            Value::String("publish".to_string()),
+        );
+        params.add(
+            "input_mappings.0.topic",
+            Value::String("/cmd_vel".to_string()),
+        );
+        params.add(
+            "input_mappings.0.message_type",
+            Value::String("geometry_msgs/msg/Twist".to_string()),
+        );
+        params.add(
+            "input_mappings.0.field",
+            Value::String("linear.x".to_string()),
+        );
         params.add("input_mappings.0.scale", Value::F64(0.5));
         params.add("input_mappings.0.deadzone", Value::F64(0.15));
-        
+
         // Service action
-        params.add("input_mappings.1.source_type", Value::String("button".to_string()));
+        params.add(
+            "input_mappings.1.source_type",
+            Value::String("button".to_string()),
+        );
         params.add("input_mappings.1.source_index", Value::I64(0));
-        params.add("input_mappings.1.action_type", Value::String("call_service".to_string()));
-        params.add("input_mappings.1.service_name", Value::String("/emergency_stop".to_string()));
-        params.add("input_mappings.1.service_type", Value::String("std_srvs/srv/Empty".to_string()));
-        
+        params.add(
+            "input_mappings.1.action_type",
+            Value::String("call_service".to_string()),
+        );
+        params.add(
+            "input_mappings.1.service_name",
+            Value::String("/emergency_stop".to_string()),
+        );
+        params.add(
+            "input_mappings.1.service_type",
+            Value::String("std_srvs/srv/Empty".to_string()),
+        );
+
         let profile = params.to_profile().unwrap();
-        
+
         assert_eq!(profile.enable_button, Some(4));
         assert_eq!(profile.input_mappings.len(), 2);
-        
+
         // Verify publish action
         match &profile.input_mappings[0].source {
             InputSource::Axis(idx) => assert_eq!(*idx, 1),
             _ => panic!("Expected Axis source"),
         }
-        
+
         // Verify service action
         match &profile.input_mappings[1].action {
-            ActionType::CallService { service_name, service_type } => {
+            ActionType::CallService {
+                service_name,
+                service_type,
+            } => {
                 assert_eq!(service_name, "/emergency_stop");
                 assert_eq!(service_type, "std_srvs/srv/Empty");
             }
             _ => panic!("Expected CallService action"),
         }
     }
-    
+
     #[test]
     fn test_missing_service_type_fails() {
         let mut params = MockParams::new();
-        
+
         params.add("profile_name", Value::String("test".to_string()));
-        
+
         // Add service mapping without service_type
-        params.add("input_mappings.0.source_type", Value::String("button".to_string()));
+        params.add(
+            "input_mappings.0.source_type",
+            Value::String("button".to_string()),
+        );
         params.add("input_mappings.0.source_index", Value::I64(0));
-        params.add("input_mappings.0.action_type", Value::String("call_service".to_string()));
-        params.add("input_mappings.0.service_name", Value::String("/test".to_string()));
+        params.add(
+            "input_mappings.0.action_type",
+            Value::String("call_service".to_string()),
+        );
+        params.add(
+            "input_mappings.0.service_name",
+            Value::String("/test".to_string()),
+        );
         // Missing service_type
-        
+
         let result = params.to_profile();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing service_type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Missing service_type"));
     }
-    
+
     #[test]
     fn test_is_enabled_with_service_actions() {
         let mut profile = Profile::new("test".to_string());
         profile.enable_button = Some(5);
-        
+
         profile.input_mappings.push(InputMapping {
             id: None,
             source: InputSource::Button(0),
@@ -501,13 +712,13 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Enable button not pressed
         tracker.update_buttons(&[1, 0, 0, 0, 0, 0]);
         assert!(!is_enabled(&profile, &tracker));
-        
+
         // Enable button pressed
         tracker.update_buttons(&[1, 0, 0, 0, 0, 1]);
         assert!(is_enabled(&profile, &tracker));

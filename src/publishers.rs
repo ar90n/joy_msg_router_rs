@@ -193,7 +193,6 @@ impl Publishers {
             .unwrap_or(false)
     }
 
-
     /// Get supported message types
     #[allow(dead_code)]
     pub fn supported_types() -> Vec<&'static str> {

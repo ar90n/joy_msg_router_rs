@@ -1,4 +1,6 @@
-use crate::config::{ActionType, InputMapping, InputSource, InputSourceType, ModifierTarget, SourceTarget};
+use crate::config::{
+    ActionType, InputMapping, InputSource, InputSourceType, ModifierTarget, SourceTarget,
+};
 use crate::joy_msg_tracker::JoyMsgTracker;
 
 /// Represents an active modifier and its strength
@@ -16,9 +18,12 @@ pub fn collect_active_modifiers(
     tracker: &JoyMsgTracker,
 ) -> Vec<ActiveModifier> {
     let mut active_modifiers = Vec::new();
-    
+
     for mapping in mappings {
-        if let ActionType::Modifier { apply_gradually, .. } = &mapping.action {
+        if let ActionType::Modifier {
+            apply_gradually, ..
+        } = &mapping.action
+        {
             let (is_active, strength) = match mapping.source {
                 InputSource::Axis(idx) => {
                     let value = tracker.get_axis(idx).unwrap_or(0.0) as f64;
@@ -36,7 +41,7 @@ pub fn collect_active_modifiers(
                     (pressed, if pressed { 1.0 } else { 0.0 })
                 }
             };
-            
+
             if is_active {
                 active_modifiers.push(ActiveModifier {
                     mapping: mapping.clone(),
@@ -45,7 +50,7 @@ pub fn collect_active_modifiers(
             }
         }
     }
-    
+
     active_modifiers
 }
 
@@ -56,15 +61,16 @@ pub fn apply_modifiers_to_mapping(
     all_mappings: &[InputMapping],
 ) -> InputMapping {
     let mut modified_mapping = mapping.clone();
-    
+
     for modifier in active_modifiers {
-        if let ActionType::Modifier { 
-            targets, 
-            scale_multiplier, 
-            offset_delta, 
+        if let ActionType::Modifier {
+            targets,
+            scale_multiplier,
+            offset_delta,
             deadzone_override,
             ..
-        } = &modifier.mapping.action {
+        } = &modifier.mapping.action
+        {
             // Check if this modifier targets our mapping
             if is_mapping_targeted(mapping, targets, all_mappings) {
                 // Apply modifications based on modifier strength
@@ -73,12 +79,12 @@ pub fn apply_modifiers_to_mapping(
                     let effective_multiplier = 1.0 + (scale_mult - 1.0) * modifier.strength;
                     modified_mapping.scale *= effective_multiplier;
                 }
-                
+
                 if let Some(offset_d) = offset_delta {
                     // Offset is additive
                     modified_mapping.offset += offset_d * modifier.strength;
                 }
-                
+
                 if let Some(deadzone_o) = deadzone_override {
                     // Deadzone takes the minimum (most restrictive)
                     // Only apply if modifier is at full strength for consistency
@@ -89,7 +95,7 @@ pub fn apply_modifiers_to_mapping(
             }
         }
     }
-    
+
     modified_mapping
 }
 
@@ -131,40 +137,38 @@ fn does_source_match(input_source: &InputSource, target: &SourceTarget) -> bool 
 mod tests {
     use super::*;
     use crate::config::{ActionType, InputMapping, InputSource};
-    
+
     #[test]
     fn test_collect_active_button_modifiers() {
-        let mappings = vec![
-            InputMapping {
-                id: Some("test".to_string()),
-                source: InputSource::Button(0),
-                action: ActionType::Modifier {
-                    targets: vec![],
-                    scale_multiplier: Some(2.0),
-                    offset_delta: None,
-                    deadzone_override: None,
-                    apply_gradually: false,
-                },
-                scale: 1.0,
-                offset: 0.0,
-                deadzone: 0.0,
+        let mappings = vec![InputMapping {
+            id: Some("test".to_string()),
+            source: InputSource::Button(0),
+            action: ActionType::Modifier {
+                targets: vec![],
+                scale_multiplier: Some(2.0),
+                offset_delta: None,
+                deadzone_override: None,
+                apply_gradually: false,
             },
-        ];
-        
+            scale: 1.0,
+            offset: 0.0,
+            deadzone: 0.0,
+        }];
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Button not pressed
         tracker.update_buttons(&[0]);
         let modifiers = collect_active_modifiers(&mappings, &tracker);
         assert_eq!(modifiers.len(), 0);
-        
+
         // Button pressed
         tracker.update_buttons(&[1]);
         let modifiers = collect_active_modifiers(&mappings, &tracker);
         assert_eq!(modifiers.len(), 1);
         assert_eq!(modifiers[0].strength, 1.0);
     }
-    
+
     #[test]
     fn test_apply_scale_modifier() {
         let target_mapping = InputMapping {
@@ -180,14 +184,14 @@ mod tests {
             offset: 0.1,
             deadzone: 0.15,
         };
-        
+
         let modifier = ActiveModifier {
             mapping: InputMapping {
                 id: None,
                 source: InputSource::Button(5),
                 action: ActionType::Modifier {
-                    targets: vec![ModifierTarget::MappingId { 
-                        mapping_id: "forward".to_string() 
+                    targets: vec![ModifierTarget::MappingId {
+                        mapping_id: "forward".to_string(),
                     }],
                     scale_multiplier: Some(2.0),
                     offset_delta: Some(0.2),
@@ -200,14 +204,15 @@ mod tests {
             },
             strength: 1.0,
         };
-        
-        let modified = apply_modifiers_to_mapping(&target_mapping, &[modifier], &[target_mapping.clone()]);
-        
+
+        let modified =
+            apply_modifiers_to_mapping(&target_mapping, &[modifier], &[target_mapping.clone()]);
+
         assert_eq!(modified.scale, 1.0); // 0.5 * 2.0
         assert_eq!(modified.offset, 0.3); // 0.1 + 0.2
         assert_eq!(modified.deadzone, 0.05); // min(0.15, 0.05)
     }
-    
+
     #[test]
     fn test_gradual_modifier() {
         let target_mapping = InputMapping {
@@ -223,17 +228,17 @@ mod tests {
             offset: 0.0,
             deadzone: 0.1,
         };
-        
+
         let modifier = ActiveModifier {
             mapping: InputMapping {
                 id: None,
                 source: InputSource::Axis(6),
                 action: ActionType::Modifier {
-                    targets: vec![ModifierTarget::Source { 
+                    targets: vec![ModifierTarget::Source {
                         source: SourceTarget {
                             source_type: InputSourceType::Axis,
                             source_index: 1,
-                        }
+                        },
                     }],
                     scale_multiplier: Some(3.0),
                     offset_delta: None,
@@ -246,9 +251,10 @@ mod tests {
             },
             strength: 0.5, // Half strength
         };
-        
-        let modified = apply_modifiers_to_mapping(&target_mapping, &[modifier], &[target_mapping.clone()]);
-        
+
+        let modified =
+            apply_modifiers_to_mapping(&target_mapping, &[modifier], &[target_mapping.clone()]);
+
         // With 50% strength and 3.0 multiplier: 1.0 + (3.0 - 1.0) * 0.5 = 2.0
         assert_eq!(modified.scale, 2.0);
     }

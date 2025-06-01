@@ -52,43 +52,50 @@ pub fn load_profile_from_yaml_file<P: AsRef<Path>>(
     file_path: P,
     profile_name: Option<&str>,
 ) -> Result<Profile> {
-    let yaml_content = fs::read_to_string(&file_path)
-        .map_err(|e| anyhow!("Failed to read YAML file: {}", e))?;
-    
-    let config: YamlConfig = serde_yaml::from_str(&yaml_content)
-        .map_err(|e| anyhow!("Failed to parse YAML: {}", e))?;
-    
+    let yaml_content =
+        fs::read_to_string(&file_path).map_err(|e| anyhow!("Failed to read YAML file: {}", e))?;
+
+    let config: YamlConfig =
+        serde_yaml::from_str(&yaml_content).map_err(|e| anyhow!("Failed to parse YAML: {}", e))?;
+
     let selected_profile_name = profile_name
         .or(config.default_profile.as_deref())
         .ok_or_else(|| anyhow!("No profile specified and no default profile defined"))?;
-    
-    let yaml_profile = config.profiles
-        .get(selected_profile_name)
-        .ok_or_else(|| anyhow!("Profile '{}' not found in configuration", selected_profile_name))?;
-    
+
+    let yaml_profile = config.profiles.get(selected_profile_name).ok_or_else(|| {
+        anyhow!(
+            "Profile '{}' not found in configuration",
+            selected_profile_name
+        )
+    })?;
+
     let mut profile = Profile::new(selected_profile_name.to_string());
     profile.enable_button = yaml_profile.enable_button;
-    
+
     for yaml_mapping in &yaml_profile.input_mappings {
         let source = match yaml_mapping.source_type.as_str() {
             "axis" => InputSource::Axis(yaml_mapping.source_index),
             "button" => InputSource::Button(yaml_mapping.source_index),
             _ => return Err(anyhow!("Invalid source type: {}", yaml_mapping.source_type)),
         };
-        
+
         let action = match yaml_mapping.action.action_type.as_str() {
             "publish" => {
-                let topic = yaml_mapping.action.topic
+                let topic = yaml_mapping
+                    .action
+                    .topic
                     .as_ref()
                     .ok_or_else(|| anyhow!("Missing topic for publish action"))?
                     .clone();
-                let message_type = yaml_mapping.action.message_type
+                let message_type = yaml_mapping
+                    .action
+                    .message_type
                     .as_ref()
                     .ok_or_else(|| anyhow!("Missing message_type for publish action"))?
                     .clone();
                 let field = yaml_mapping.action.field.clone();
                 let once = yaml_mapping.action.once.unwrap_or(false);
-                
+
                 ActionType::Publish {
                     topic,
                     message_type,
@@ -97,26 +104,32 @@ pub fn load_profile_from_yaml_file<P: AsRef<Path>>(
                 }
             }
             "call_service" => {
-                let service_name = yaml_mapping.action.service_name
+                let service_name = yaml_mapping
+                    .action
+                    .service_name
                     .as_ref()
                     .ok_or_else(|| anyhow!("Missing service_name for call_service action"))?
                     .clone();
-                let service_type = yaml_mapping.action.service_type
+                let service_type = yaml_mapping
+                    .action
+                    .service_type
                     .as_ref()
                     .ok_or_else(|| anyhow!("Missing service_type for call_service action"))?
                     .clone();
-                
+
                 ActionType::CallService {
                     service_name,
                     service_type,
                 }
             }
             "modifier" => {
-                let targets = yaml_mapping.action.targets
+                let targets = yaml_mapping
+                    .action
+                    .targets
                     .as_ref()
                     .ok_or_else(|| anyhow!("Missing targets for modifier action"))?
                     .clone();
-                
+
                 ActionType::Modifier {
                     targets,
                     scale_multiplier: yaml_mapping.action.scale_multiplier,
@@ -125,9 +138,14 @@ pub fn load_profile_from_yaml_file<P: AsRef<Path>>(
                     apply_gradually: yaml_mapping.action.apply_gradually.unwrap_or(false),
                 }
             }
-            _ => return Err(anyhow!("Invalid action type: {}", yaml_mapping.action.action_type)),
+            _ => {
+                return Err(anyhow!(
+                    "Invalid action type: {}",
+                    yaml_mapping.action.action_type
+                ))
+            }
         };
-        
+
         profile.input_mappings.push(InputMapping {
             id: yaml_mapping.id.clone(),
             source,
@@ -137,9 +155,9 @@ pub fn load_profile_from_yaml_file<P: AsRef<Path>>(
             deadzone: yaml_mapping.deadzone.unwrap_or(0.1),
         });
     }
-    
+
     profile.validate()?;
-    
+
     Ok(profile)
 }
 
@@ -148,7 +166,7 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
-    
+
     #[test]
     fn test_load_yaml_profile() {
         let yaml_content = r#"
@@ -174,30 +192,33 @@ profiles:
           service_name: "/emergency_stop"
           service_type: "std_srvs/srv/Trigger"
 "#;
-        
+
         let mut temp_file = NamedTempFile::new().unwrap();
         write!(temp_file, "{}", yaml_content).unwrap();
-        
+
         let profile = load_profile_from_yaml_file(temp_file.path(), None).unwrap();
-        
+
         assert_eq!(profile.name, "test");
         assert_eq!(profile.enable_button, Some(4));
         assert_eq!(profile.input_mappings.len(), 2);
-        
+
         match &profile.input_mappings[0].source {
             InputSource::Axis(idx) => assert_eq!(*idx, 1),
             _ => panic!("Expected Axis source"),
         }
-        
+
         match &profile.input_mappings[1].action {
-            ActionType::CallService { service_name, service_type } => {
+            ActionType::CallService {
+                service_name,
+                service_type,
+            } => {
                 assert_eq!(service_name, "/emergency_stop");
                 assert_eq!(service_type, "std_srvs/srv/Trigger");
             }
             _ => panic!("Expected CallService action"),
         }
     }
-    
+
     #[test]
     fn test_load_specific_profile() {
         let yaml_content = r#"
@@ -220,19 +241,19 @@ profiles:
           topic: "/test2"
           message_type: "std_msgs/msg/Bool"
 "#;
-        
+
         let mut temp_file = NamedTempFile::new().unwrap();
         write!(temp_file, "{}", yaml_content).unwrap();
-        
+
         let profile = load_profile_from_yaml_file(temp_file.path(), Some("profile2")).unwrap();
-        
+
         assert_eq!(profile.name, "profile2");
         match &profile.input_mappings[0].action {
             ActionType::Publish { topic, .. } => assert_eq!(topic, "/test2"),
             _ => panic!("Expected Publish action"),
         }
     }
-    
+
     #[test]
     fn test_load_modifier_profile() {
         let yaml_content = r#"
@@ -267,29 +288,41 @@ profiles:
           scale_multiplier: 3.0
           apply_gradually: true
 "#;
-        
+
         let mut temp_file = NamedTempFile::new().unwrap();
         write!(temp_file, "{}", yaml_content).unwrap();
-        
+
         let profile = load_profile_from_yaml_file(temp_file.path(), None).unwrap();
-        
+
         assert_eq!(profile.name, "test");
         assert_eq!(profile.input_mappings.len(), 3);
-        
+
         // Check first mapping has ID
-        assert_eq!(profile.input_mappings[0].id, Some("forward_movement".to_string()));
-        
+        assert_eq!(
+            profile.input_mappings[0].id,
+            Some("forward_movement".to_string())
+        );
+
         // Check modifier actions
         match &profile.input_mappings[1].action {
-            ActionType::Modifier { targets, scale_multiplier, .. } => {
+            ActionType::Modifier {
+                targets,
+                scale_multiplier,
+                ..
+            } => {
                 assert_eq!(targets.len(), 1);
                 assert_eq!(*scale_multiplier, Some(2.0));
             }
             _ => panic!("Expected Modifier action"),
         }
-        
+
         match &profile.input_mappings[2].action {
-            ActionType::Modifier { targets, scale_multiplier, apply_gradually, .. } => {
+            ActionType::Modifier {
+                targets,
+                scale_multiplier,
+                apply_gradually,
+                ..
+            } => {
                 assert_eq!(targets.len(), 1);
                 assert_eq!(*scale_multiplier, Some(3.0));
                 assert_eq!(*apply_gradually, true);

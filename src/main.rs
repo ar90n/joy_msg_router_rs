@@ -34,7 +34,7 @@ use clients::{ServiceClient, ServiceClients};
 use config::{ActionType, InputMapping, InputSource};
 use joy_msg_tracker::JoyMsgTracker;
 use logging::{log_error, LogContext};
-use modifier::{collect_active_modifiers, apply_modifiers_to_mapping};
+use modifier::{apply_modifiers_to_mapping, collect_active_modifiers};
 use profile::{is_enabled, load_profile_from_params};
 use yaml_loader::load_profile_from_yaml_file;
 
@@ -78,35 +78,40 @@ fn process_input_mappings(
 ) -> Result<()> {
     // Pass 1: Collect active modifiers
     let active_modifiers = collect_active_modifiers(input_mappings, tracker);
-    
+
     if !active_modifiers.is_empty() {
         pr_debug!(logger, "Active modifiers: {}", active_modifiers.len());
     }
-    
+
     // Pass 2: Process mappings with modifiers applied
     for mapping in input_mappings {
         // Skip modifier mappings - they don't produce output themselves
         if matches!(mapping.action, ActionType::Modifier { .. }) {
             continue;
         }
-        
+
         // Apply modifiers to get the effective mapping
-        let effective_mapping = apply_modifiers_to_mapping(mapping, &active_modifiers, input_mappings);
-        
+        let effective_mapping =
+            apply_modifiers_to_mapping(mapping, &active_modifiers, input_mappings);
+
         // Log if mapping was modified
-        if effective_mapping.scale != mapping.scale 
-            || effective_mapping.offset != mapping.offset 
-            || effective_mapping.deadzone != mapping.deadzone {
+        if effective_mapping.scale != mapping.scale
+            || effective_mapping.offset != mapping.offset
+            || effective_mapping.deadzone != mapping.deadzone
+        {
             pr_debug!(
-                logger, 
+                logger,
                 "Mapping {:?} modified: scale {} -> {}, offset {} -> {}, deadzone {} -> {}",
                 mapping.source,
-                mapping.scale, effective_mapping.scale,
-                mapping.offset, effective_mapping.offset,
-                mapping.deadzone, effective_mapping.deadzone
+                mapping.scale,
+                effective_mapping.scale,
+                mapping.offset,
+                effective_mapping.offset,
+                mapping.deadzone,
+                effective_mapping.deadzone
             );
         }
-        
+
         let (input_value, is_active, just_activated) = match effective_mapping.source {
             InputSource::Axis(idx) => {
                 let value = tracker.get_axis(idx).unwrap_or(0.0) as f64;
@@ -150,9 +155,7 @@ fn process_input_mappings(
                     processed_value
                 );
                 // Publish value directly
-                if let Err(e) =
-                    publishers.publish_value(topic, processed_value, field.as_deref())
-                {
+                if let Err(e) = publishers.publish_value(topic, processed_value, field.as_deref()) {
                     log_error(
                         logger,
                         LogContext {
@@ -216,7 +219,6 @@ fn process_input_mappings(
         }
     }
 
-
     Ok(())
 }
 
@@ -228,39 +230,41 @@ fn main() -> Result<()> {
         ctx.create_node("joy_msg_router", None, Default::default())
             .map_err(|e| anyhow!("Failed to create ROS2 node: {:?}", e))?,
     );
-    
+
     // Create parameter server
     let param_server = node
         .create_parameter_server()
         .map_err(|e| anyhow!("Failed to create parameter server: {:?}", e))?;
-    
+
     // Try to load profile - first check if config_file parameter is set
     let profile = {
         let params_guard = param_server.params.read();
-        
+
         // Check for config_file parameter
-        let config_file = params_guard.get_parameter("config_file")
-            .and_then(|p| if let safe_drive::parameter::Value::String(s) = &p.value { 
-                Some(s.clone()) 
-            } else { 
-                None 
-            });
+        let config_file = params_guard.get_parameter("config_file").and_then(|p| {
+            if let safe_drive::parameter::Value::String(s) = &p.value {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
         drop(params_guard); // Release the lock before loading from file
-        
+
         if let Some(config_file) = config_file {
             pr_info!(logger, "Loading configuration from file: {}", config_file);
-                
-                // Check if profile_name parameter is also set
-                let profile_name = {
-                    let params_guard = param_server.params.read();
-                    params_guard.get_parameter("profile_name")
-                        .and_then(|p| if let safe_drive::parameter::Value::String(s) = &p.value { 
-                            Some(s.clone()) 
-                        } else { 
-                            None 
-                        })
-                };
-                
+
+            // Check if profile_name parameter is also set
+            let profile_name = {
+                let params_guard = param_server.params.read();
+                params_guard.get_parameter("profile_name").and_then(|p| {
+                    if let safe_drive::parameter::Value::String(s) = &p.value {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+            };
+
             load_profile_from_yaml_file(&config_file, profile_name.as_deref())
                 .context("Failed to load profile from YAML file")?
         } else {
@@ -827,21 +831,21 @@ mod tests {
     fn test_service_call_just_activated() {
         // Test that service calls only trigger on button press (just_activated)
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Initial state - no buttons pressed
         tracker.update_buttons(&[0, 0, 0]);
         assert!(!tracker.just_pressed(0));
         assert!(!tracker.just_pressed(1));
-        
+
         // Press button 0
         tracker.update_buttons(&[1, 0, 0]);
         assert!(tracker.just_pressed(0));
         assert!(!tracker.just_pressed(1));
-        
+
         // Hold button 0 - should not trigger again
         tracker.update_buttons(&[1, 0, 0]);
         assert!(!tracker.just_pressed(0));
-        
+
         // Release and press again
         tracker.update_buttons(&[0, 0, 0]);
         tracker.update_buttons(&[1, 0, 0]);
@@ -852,7 +856,7 @@ mod tests {
     fn test_multiple_service_mappings() {
         // Test profile with multiple service call mappings
         let mut profile = Profile::new("test".to_string());
-        
+
         // Button 0 -> Trigger service
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
@@ -864,7 +868,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 1 -> Empty service
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
@@ -876,7 +880,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 2 -> Another Trigger service
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(2),
@@ -888,20 +892,26 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         assert_eq!(profile.input_mappings.len(), 3);
-        
+
         // Verify each mapping
         match &profile.input_mappings[0].action {
-            ActionType::CallService { service_name, service_type } => {
+            ActionType::CallService {
+                service_name,
+                service_type,
+            } => {
                 assert_eq!(service_name, "/reset");
                 assert_eq!(service_type, "std_srvs/srv/Trigger");
             }
             _ => panic!("Expected CallService action"),
         }
-        
+
         match &profile.input_mappings[1].action {
-            ActionType::CallService { service_name, service_type } => {
+            ActionType::CallService {
+                service_name,
+                service_type,
+            } => {
                 assert_eq!(service_name, "/stop");
                 assert_eq!(service_type, "std_srvs/srv/Empty");
             }
@@ -914,7 +924,7 @@ mod tests {
         // Test profile with mix of publish and service actions
         let mut profile = Profile::new("mixed".to_string());
         profile.enable_button = Some(4);
-        
+
         // Axis 0 -> linear velocity
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
@@ -928,7 +938,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.1,
         });
-        
+
         // Button 0 -> service call
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
@@ -940,7 +950,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Button 1 -> bool publish
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
@@ -954,7 +964,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Validate the profile
         assert!(profile.validate().is_ok());
         assert_eq!(profile.input_mappings.len(), 3);
@@ -964,7 +974,7 @@ mod tests {
     fn test_service_client_recreation() {
         // Test that ServiceClients handles client recreation properly
         use crate::clients::ServiceClients;
-        
+
         // Create a dummy profile with service mappings
         let mut profile = Profile::new("test".to_string());
         profile.input_mappings.push(InputMapping {
@@ -977,7 +987,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // For unit tests, we can only verify the structure
         let clients = ServiceClients::empty_for_testing();
         assert_eq!(clients.clients.len(), 0);
@@ -989,7 +999,7 @@ mod tests {
         // This test verifies the structure of handle_service_send_result
         // In a real integration test, we would verify the actual logging output
         // For now, we just ensure the function signature is correct
-        
+
         // The function is tested implicitly through the service calling code
         // but we document here what it should do:
         // 1. On success: log info message and recreate client
@@ -1003,7 +1013,7 @@ mod tests {
         // (services should work regardless of enable button state)
         let mut profile = Profile::new("test".to_string());
         profile.enable_button = Some(4);
-        
+
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
             action: ActionType::CallService {
@@ -1014,28 +1024,28 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
-        
+
         // Test with enable button not pressed
         tracker.update_buttons(&[1, 0, 0, 0, 0]);
         assert!(tracker.just_pressed(0));
         assert!(!is_enabled(&profile, &tracker));
-        
+
         // Test with enable button pressed
         tracker.update_buttons(&[1, 0, 0, 0, 1]);
         assert!(!tracker.just_pressed(0)); // Not just pressed anymore
         assert!(is_enabled(&profile, &tracker));
     }
-    
+
     #[test]
     fn test_modifier_functionality() {
-        use crate::modifier::{collect_active_modifiers, apply_modifiers_to_mapping};
-        use crate::config::{ModifierTarget, InputSourceType, SourceTarget};
-        
+        use crate::config::{InputSourceType, ModifierTarget, SourceTarget};
+        use crate::modifier::{apply_modifiers_to_mapping, collect_active_modifiers};
+
         // Create a profile with a movement mapping and a modifier
         let mut profile = Profile::new("test".to_string());
-        
+
         // Movement mapping
         profile.input_mappings.push(InputMapping {
             id: Some("forward".to_string()),
@@ -1050,14 +1060,14 @@ mod tests {
             offset: 0.0,
             deadzone: 0.1,
         });
-        
+
         // Turbo button modifier
         profile.input_mappings.push(InputMapping {
             id: None,
             source: InputSource::Button(5),
             action: ActionType::Modifier {
-                targets: vec![ModifierTarget::MappingId { 
-                    mapping_id: "forward".to_string() 
+                targets: vec![ModifierTarget::MappingId {
+                    mapping_id: "forward".to_string(),
                 }],
                 scale_multiplier: Some(2.0),
                 offset_delta: None,
@@ -1068,25 +1078,27 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         let mut tracker = JoyMsgTracker::new();
         tracker.update_axes(&[0.0, 0.5]);
-        
+
         // Test without modifier
         tracker.update_buttons(&[0, 0, 0, 0, 0, 0]);
         let modifiers = collect_active_modifiers(&profile.input_mappings, &tracker);
         assert_eq!(modifiers.len(), 0);
-        
+
         let forward_mapping = &profile.input_mappings[0];
-        let modified = apply_modifiers_to_mapping(forward_mapping, &modifiers, &profile.input_mappings);
+        let modified =
+            apply_modifiers_to_mapping(forward_mapping, &modifiers, &profile.input_mappings);
         assert_eq!(modified.scale, 0.5);
-        
+
         // Test with modifier active
         tracker.update_buttons(&[0, 0, 0, 0, 0, 1]);
         let modifiers = collect_active_modifiers(&profile.input_mappings, &tracker);
         assert_eq!(modifiers.len(), 1);
-        
-        let modified = apply_modifiers_to_mapping(forward_mapping, &modifiers, &profile.input_mappings);
+
+        let modified =
+            apply_modifiers_to_mapping(forward_mapping, &modifiers, &profile.input_mappings);
         assert_eq!(modified.scale, 1.0); // 0.5 * 2.0
     }
 }

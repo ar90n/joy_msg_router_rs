@@ -127,7 +127,7 @@ mod tests {
     fn test_service_clients_from_profile() {
         // Test that ServiceClients correctly extracts service configurations from profile
         let mut profile = Profile::new("test".to_string());
-        
+
         // Add Trigger service
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
@@ -139,7 +139,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Add Empty service
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
@@ -151,7 +151,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Add unsupported service (should be ignored)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(2),
@@ -163,7 +163,7 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // Add publish action (should be ignored)
         profile.input_mappings.push(InputMapping {
             source: InputSource::Axis(0),
@@ -177,49 +177,51 @@ mod tests {
             offset: 0.0,
             deadzone: 0.1,
         });
-        
+
         // Test with empty_for_testing since we can't create real clients in tests
         let clients = ServiceClients::empty_for_testing();
-        
+
         // Verify structure is correct (actual client creation tested in integration tests)
         assert_eq!(clients.clients.len(), 0);
         assert_eq!(clients.service_types.len(), 0);
     }
-    
+
     #[test]
     fn test_has_service() {
         let mut clients = ServiceClients::empty_for_testing();
-        
+
         // Manually add a service type for testing
-        clients.service_types.insert("/test".to_string(), "std_srvs/srv/Trigger".to_string());
-        
+        clients
+            .service_types
+            .insert("/test".to_string(), "std_srvs/srv/Trigger".to_string());
+
         // has_service checks clients HashMap, not service_types
         assert!(!clients.has_service("/test"));
         assert!(!clients.has_service("/nonexistent"));
     }
-    
+
     #[test]
     fn test_take_client() {
         let mut clients = ServiceClients::empty_for_testing();
-        
+
         // Taking from empty should return None
         assert!(clients.take_client("/test").is_none());
     }
-    
+
     #[test]
     fn test_service_type_filtering() {
         // Test that only supported service types are processed
         let mut profile = Profile::new("test".to_string());
-        
+
         // Mix of supported and unsupported service types
         let service_configs = vec![
             ("std_srvs/srv/Trigger", true),
             ("std_srvs/srv/Empty", true),
-            ("std_srvs/srv/SetBool", false), // Not supported
+            ("std_srvs/srv/SetBool", false),      // Not supported
             ("geometry_msgs/srv/GetPlan", false), // Not supported
-            ("nav_msgs/srv/LoadMap", false), // Not supported
+            ("nav_msgs/srv/LoadMap", false),      // Not supported
         ];
-        
+
         for (i, (service_type, should_be_supported)) in service_configs.iter().enumerate() {
             profile.input_mappings.push(InputMapping {
                 source: InputSource::Button(i),
@@ -232,20 +234,23 @@ mod tests {
                 deadzone: 0.0,
             });
         }
-        
+
         // Count how many services should be supported
-        let expected_count = service_configs.iter().filter(|(_, supported)| *supported).count();
-        
+        let expected_count = service_configs
+            .iter()
+            .filter(|(_, supported)| *supported)
+            .count();
+
         // In real implementation, from_profile would create clients for supported types
         // Here we just verify the test data is correct
         assert_eq!(expected_count, 2); // Only Trigger and Empty are supported
     }
-    
+
     #[test]
     fn test_duplicate_service_names() {
         // Test handling of duplicate service names in profile
         let mut profile = Profile::new("test".to_string());
-        
+
         // Add same service name twice with different types
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(0),
@@ -257,18 +262,18 @@ mod tests {
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         profile.input_mappings.push(InputMapping {
             source: InputSource::Button(1),
             action: ActionType::CallService {
-                service_name: "/reset".to_string(), // Same name
+                service_name: "/reset".to_string(),             // Same name
                 service_type: "std_srvs/srv/Empty".to_string(), // Different type
             },
             scale: 1.0,
             offset: 0.0,
             deadzone: 0.0,
         });
-        
+
         // The second one should overwrite the first in a real implementation
         // This documents the expected behavior
         let clients = ServiceClients::empty_for_testing();

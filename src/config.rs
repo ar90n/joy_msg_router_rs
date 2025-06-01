@@ -26,13 +26,9 @@ pub enum InputSourceType {
 #[serde(untagged)]
 pub enum ModifierTarget {
     /// Target a specific mapping by its ID
-    MappingId {
-        mapping_id: String,
-    },
+    MappingId { mapping_id: String },
     /// Target mappings by their source
-    Source {
-        source: SourceTarget,
-    },
+    Source { source: SourceTarget },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -48,7 +44,7 @@ pub struct InputMapping {
     /// Optional unique identifier for this mapping
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    
+
     pub source: InputSource,
     pub action: ActionType,
 
@@ -91,7 +87,7 @@ pub enum ActionType {
         /// e.g., "std_srvs/srv/Trigger", "std_srvs/srv/Empty"
         service_type: String,
     },
-    
+
     /// Modify scale, offset, and deadzone of other mappings
     Modifier {
         /// Which mappings to modify
